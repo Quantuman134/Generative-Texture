@@ -28,7 +28,7 @@ class ProgressiveEncoding(nn.Module):
         return x * alpha
     
 class NeuralTextureField(nn.Module):
-    def __init__(self, width, depth, input_dim=2) -> None:
+    def __init__(self, width, depth, input_dim=2, pixel_dim=3) -> None:
         super().__init__()
         self.width = width
         self.depth = depth
@@ -39,6 +39,7 @@ class NeuralTextureField(nn.Module):
         for i in range(depth):
             layers.append(nn.Linear(width, width))
             layers.append(nn.ReLU())
+        layers.append(nn.Linear(width, pixel_dim))
         self.base = nn.ModuleList(layers)
 
         print(self.base)
