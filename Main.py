@@ -5,20 +5,23 @@ from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
 from PIL import Image
+from utils import device
 
 def train_mlp(mlp):
     img_path = "./Assets/Images/test_image_16_16.png"
     pd = PixelDataSet(img_path)
     pd.img.show()
-    dataloader = DataLoader(pd, batch_size=64, shuffle=True)
+    dataloader = DataLoader(pd, batch_size=256, shuffle=True)
     
-    learning_rate = 0.001
-    epochs = 1000
+    learning_rate = 0.005
+    epochs = 5000
     optimizer = torch.optim.Adam(mlp.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
 
     for epoch in range(epochs):
         total_loss = 0
+        if epoch > 0.5 * epochs:
+            learning_rate = 0.001
         for batch_idx, (coos_gt, pixels_gt) in enumerate(dataloader):
             optimizer.zero_grad()
             pixels_pred = mlp(coos_gt)
@@ -33,15 +36,15 @@ def train_mlp(mlp):
     torch.save(mlp.state_dict(), "ntf.pth")
 
 def render_img(mlp) -> Image:
-    width, height = 16, 16
+    width, height = 256, 256
     img = Image.new("RGB", (width, height))
     for y in range(img.height):
         for x in range(img.width):
             x_temp = x / img.width
             y_temp = y / img.height
-            coo = torch.Tensor([x_temp, y_temp])
+            coo = torch.tensor([x_temp, y_temp], dtype=torch.float32, device=device)
             coo = Img_Asset.coo_transform(coo)
-            pixel = mlp(coo) * 255
+            pixel = mlp(coo)
             img.putpixel((x, y), tuple(map(int, pixel)))
 
     return img
@@ -50,7 +53,8 @@ def render_img(mlp) -> Image:
 
 
 def main():
-    mlp = NeuralTextureField(width=256, depth=4)
+    mlp = NeuralTextureField(width=256, depth=4).cuda()
+    mlp.to(device)
     train_mlp(mlp)
     img = render_img(mlp)
     img.show()

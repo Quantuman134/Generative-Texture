@@ -1,6 +1,7 @@
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
+from utils import device
 
 #Load an image and convert it to a tensor for torch
 class PixelDataSet(Dataset):
@@ -15,8 +16,8 @@ class PixelDataSet(Dataset):
         x = (index % self.width) / self.width
         y = (index // self.width) / self.height
         pixel = self.img.getpixel((index % self.width, index // self.width))
-        pixel = torch.Tensor(pixel)
-        coo = torch.Tensor([x, y])
+        pixel = torch.tensor(pixel, dtype=torch.float32, device=device)
+        coo = torch.tensor([x, y], dtype=torch.float32, device=device)
 
         return coo_transform(coo), pixel
     
@@ -24,8 +25,8 @@ class PixelDataSet(Dataset):
         return self.width * self.height
 
 def coo_transform(coo):
-    mean = torch.Tensor([0.5, 0.5])
-    std = torch.Tensor([0.5, 0.5])
+    mean = torch.tensor([0.5, 0.5], dtype=torch.float32, device=device)
+    std = torch.tensor([0.5, 0.5], dtype=torch.float32, device=device)
     coo_trans = (coo - mean) / std
     return coo_trans
 
