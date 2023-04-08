@@ -44,6 +44,7 @@ def render_img(mlp, width, height) -> Image:
             coo = Img_Asset.tensor_transform(coo, mean=[0.5, 0.5], std=[0.5, 0.5])
             pixel = (mlp(coo) + 1) * 255/2
             img.putpixel((x, y), tuple(map(int, pixel)))
+            imput
 
     return img
 
