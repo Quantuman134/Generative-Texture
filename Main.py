@@ -7,14 +7,13 @@ import torch.nn as nn
 from PIL import Image
 from utils import device
 
-def train_mlp(mlp):
-    img_path = "./Assets/Images/test_image_16_16.png"
+def train_mlp(mlp, img_path):
     pd = PixelDataSet(img_path)
     pd.img.show()
-    dataloader = DataLoader(pd, batch_size=256, shuffle=True)
+    dataloader = DataLoader(pd, batch_size=64, shuffle=True)
     
-    learning_rate = 0.005
-    epochs = 5000
+    learning_rate = 0.001
+    epochs = 75
     optimizer = torch.optim.Adam(mlp.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
 
@@ -30,21 +29,20 @@ def train_mlp(mlp):
             optimizer.step()
             total_loss += loss
         
-        if (epoch+1) % 100 == 0:
+        if (epoch+1) % 1 == 0:
             print(f"Epoch {epoch+1}, Loss: {total_loss/(batch_idx+1)}")
     
     torch.save(mlp.state_dict(), "ntf.pth")
 
-def render_img(mlp) -> Image:
-    width, height = 256, 256
+def render_img(mlp, width, height) -> Image:
     img = Image.new("RGB", (width, height))
     for y in range(img.height):
         for x in range(img.width):
             x_temp = x / img.width
             y_temp = y / img.height
             coo = torch.tensor([x_temp, y_temp], dtype=torch.float32, device=device)
-            coo = Img_Asset.coo_transform(coo)
-            pixel = mlp(coo)
+            coo = Img_Asset.tensor_transform(coo, mean=[0.5, 0.5], std=[0.5, 0.5])
+            pixel = (mlp(coo) + 1) * 255/2
             img.putpixel((x, y), tuple(map(int, pixel)))
 
     return img
@@ -53,10 +51,13 @@ def render_img(mlp) -> Image:
 
 
 def main():
-    mlp = NeuralTextureField(width=256, depth=4).cuda()
+    img_path = "./Experiments/Texture_Tracking_2/hulk_face_texture_256_256.jpg"
+    mlp = NeuralTextureField(width=128, depth=2, pe_enable=True).cuda()
     mlp.to(device)
-    train_mlp(mlp)
-    img = render_img(mlp)
+    mlp.reset_weights()
+    
+    train_mlp(mlp, img_path=img_path)
+    img = render_img(mlp, width=256, height=256)
     img.show()
 
 

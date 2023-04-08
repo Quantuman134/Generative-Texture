@@ -17,21 +17,23 @@ class PixelDataSet(Dataset):
         y = (index // self.width) / self.height
         pixel = self.img.getpixel((index % self.width, index // self.width))
         pixel = torch.tensor(pixel, dtype=torch.float32, device=device)
+        
         coo = torch.tensor([x, y], dtype=torch.float32, device=device)
 
-        return coo_transform(coo), pixel
+        return tensor_transform(coo, mean=[0.5, 0.5], std=[0.5, 0.5]), \
+        tensor_transform(pixel, mean=[255/2, 255/2, 255/2], std=[255/2, 255/2, 255/2])
     
     def __len__(self):
         return self.width * self.height
 
-def coo_transform(coo):
-    mean = torch.tensor([0.5, 0.5], dtype=torch.float32, device=device)
-    std = torch.tensor([0.5, 0.5], dtype=torch.float32, device=device)
-    coo_trans = (coo - mean) / std
-    return coo_trans
+def tensor_transform(ts, mean, std):
+    mean = torch.tensor(mean, dtype=torch.float32, device=device)
+    std = torch.tensor(std, dtype=torch.float32, device=device)
+    ts_trans = (ts - mean) / std
+    return ts_trans
 
 def main():
-    PD = PixelDataSet("./Assets/Images/test_image_16_16.png")
+    PD = PixelDataSet("./Assets/Images/test_image_216_233.jpeg")
     PD.img.show()
 
 if __name__ == "__main__":
