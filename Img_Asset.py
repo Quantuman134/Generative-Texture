@@ -14,6 +14,13 @@ class PixelDataSet(Dataset):
         self.width, self.height = self.img.size
 
     def __getitem__(self, index):
+        x = (index % self.width) / self.width
+        y = (index // self.width) / self.height
+        pixel = self.img.getpixel((index % self.width, index // self.width))
+        pixel = torch.tensor(pixel, dtype=torch.float32, device=device)
+        
+        coo = torch.tensor([x, y], dtype=torch.float32, device=device)
+        '''
         x = index % self.width
         y = index // self.width
         #x += random.random()
@@ -25,6 +32,7 @@ class PixelDataSet(Dataset):
         pixel = self.img.getpixel((x, y))
         pixel = torch.tensor(pixel, dtype=torch.float32, device=device)
         coo = torch.tensor([x/self.width, y/self.height], dtype=torch.float32, device=device)
+        '''
         '''
         if x == self.width - 1 or y == self.height - 1 :
             pixel = self.img.getpixel((x, y))

@@ -76,8 +76,8 @@ def main():
 
     #training
     dataloader = DataLoader(pd, batch_size=16, shuffle=True)
-    learning_rate = 0.0001
-    epochs = 5000
+    learning_rate = 0.001
+    epochs = 2000
     optimizer = torch.optim.Adam(test_mlp.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
 
