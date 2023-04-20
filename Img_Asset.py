@@ -24,7 +24,7 @@ class PixelDataSet(Dataset):
             y = self.height - 1
         pixel = self.img.getpixel((x, y))
         pixel = torch.tensor(pixel, dtype=torch.float32, device=device)
-        coo = torch.tensor([x, y], dtype=torch.float32, device=device)
+        coo = torch.tensor([x/self.width, y/self.height], dtype=torch.float32, device=device)
         '''
         if x == self.width - 1 or y == self.height - 1 :
             pixel = self.img.getpixel((x, y))
