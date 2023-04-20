@@ -4,27 +4,6 @@ import torch.nn.functional as F
 from utils import device
 import utils
 
-'''ProgressivePoisitionEncoding from text2mesh, I have not understood it totally...
-class ProgressiveEncoding(nn.Module):
-    def __init__(self, mapping_size, T, d=3, progressive_enable=True):
-        super().__init__()
-        self._t = 0
-        self.n = mapping_size
-        self.T = T
-        self.d = d
-        self._tau = 2 * self.n / self.T
-        self.indices = torch.tensor([i for i in range(self.n)])
-        self.progressive_enable = progressive_enable
-    
-    def forward(self, x):
-        alpha = ((self._t - self._tau * self.indices)/self._tau).clamp(0, 1).repeat(2)
-        if not self.progressive_enable:
-            alpha = torch.ones_like(alpha)
-        alpha = torch.cat([torch.ones(self.d), alpha], dim=0)
-        self._t += 1
-        return x * alpha
-'''
-
 ################################
 #the position encoding layer
 class PositionEncoding(nn.Module):
@@ -68,6 +47,7 @@ class NeuralTextureField(nn.Module):
         self.base = nn.ModuleList(layers)
 
         print(self.base)
+        self.to(device)
     
     def reset_weights(self):
         self.base[-1].weight.data.zero_()
@@ -83,9 +63,56 @@ class NeuralTextureField(nn.Module):
         return colors
 
 def main():
-    test_mlp = NeuralTextureField(width=256, depth=6)
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import Img_Asset
+    from Img_Asset import PixelDataSet
+    from torch.utils.data import DataLoader
+
+    img_path = "./Assets/Images/test_image_16_16.png"
+    pd = PixelDataSet(image_path=img_path)
+    test_mlp = NeuralTextureField(width=512, depth=3, pe_enable=False)
     test_mlp.reset_weights()
-    print(torch.pi)
+
+    #training
+    dataloader = DataLoader(pd, batch_size=16, shuffle=True)
+    learning_rate = 0.0001
+    epochs = 5000
+    optimizer = torch.optim.Adam(test_mlp.parameters(), lr=learning_rate)
+    criterion = nn.MSELoss()
+
+    for epoch in range(epochs):
+        total_loss = 0
+        for batch_idx, (coos_gt, pixels_gt) in enumerate(dataloader):
+            optimizer.zero_grad()
+            pixels_pred = test_mlp(coos_gt)
+            loss = criterion(pixels_pred, pixels_gt)
+            loss.backward()
+            optimizer.step()
+            total_loss += loss
+
+        if (epoch+1) % 50 == 0:
+            print(f"Epoch {epoch+1}, Loss: {total_loss/(batch_idx+1)}")
+
+    torch.save(test_mlp.state_dict(), "ntf.pth")
+
+    #rendering
+    width = 16
+    height = 16
+    img_array = np.zeros((height, width, 3), dtype=np.uint8)
+    for j in range(width):
+        for i in range(height):
+            x = j / width
+            y = i / height
+            coo = torch.tensor([x, y], dtype=torch.float32, device=device)
+            coo = Img_Asset.tensor_transform(coo, mean=[0.5, 0.5], std=[0.5, 0.5])
+            pixel = ((test_mlp(coo) + 1) * 255/2).cpu().detach().numpy()
+            img_array[i, j, :] = pixel
+
+    plt.imshow(img_array)
+    plt.show()
+
+
 
 if __name__ == "__main__":
     main()

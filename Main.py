@@ -13,7 +13,7 @@ def train_mlp(mlp, img_path):
     dataloader = DataLoader(pd, batch_size=64, shuffle=True)
     
     learning_rate = 0.001
-    epochs = 75
+    epochs = 400
     optimizer = torch.optim.Adam(mlp.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
 
@@ -51,13 +51,13 @@ def render_img(mlp, width, height) -> Image:
 
 
 def main():
-    img_path = "./Experiments/Texture_Tracking_2/hulk_face_texture_256_256.jpg"
+    img_path = "./Assets/Images/test_image_16_16.png"
     mlp = NeuralTextureField(width=128, depth=2, pe_enable=True).cuda()
     mlp.to(device)
     mlp.reset_weights()
     
     train_mlp(mlp, img_path=img_path)
-    img = render_img(mlp, width=256, height=256)
+    img = render_img(mlp, width=16, height=16)
     img.show()
 
 
