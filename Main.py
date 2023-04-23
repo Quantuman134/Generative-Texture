@@ -4,8 +4,12 @@ import Img_Asset
 from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
+from Stable_Diffusion import StableDiffusion
 from PIL import Image
 from utils import device
+import utils
+import time
+import matplotlib.pyplot as plt
 
 def train_mlp(mlp, img_path):
     pd = PixelDataSet(img_path)
@@ -34,31 +38,67 @@ def train_mlp(mlp, img_path):
     
     torch.save(mlp.state_dict(), "ntf.pth")
 
-def render_img(mlp, width, height) -> Image:
-    img = Image.new("RGB", (width, height))
-    for y in range(img.height):
-        for x in range(img.width):
-            x_temp = x / img.width
-            y_temp = y / img.height
-            coo = torch.tensor([x_temp, y_temp], dtype=torch.float32, device=device)
+def render_img(mlp, width, height):
+    img_tensor = torch.empty((width, height, 3), dtype=torch.float32, device=device)
+    for i in range(height):
+        for j in range(width):
+            x = j / width
+            y = i / height
+            coo = torch.tensor([x, y], dtype=torch.float32, device=device)
             coo = Img_Asset.tensor_transform(coo, mean=[0.5, 0.5], std=[0.5, 0.5])
-            pixel = (mlp(coo) + 1) * 255/2
-            img.putpixel((x, y), tuple(map(int, pixel)))
+            pixel = mlp(coo)
+            img_tensor[i, j, :] = pixel
 
-    return img
+    img_tensor = img_tensor.reshape(1, height, width, 3).permute(0, 3, 1, 2).contiguous()
+    return img_tensor
+
+def train_mlp_sd(mlp, epochs, lr, text_prompt):
+    optimizer = torch.optim.Adam(mlp.parameters(), lr=lr)
+    guidance = StableDiffusion(device=device)
+    text_embeddings = guidance.get_text_embeds(text_prompt, '')
+    scaler = torch.cuda.amp.GradScaler(enabled=False)
+
+    print(f"[INFO] traning starts")
+    total_loss = 0
+    for epoch in range(epochs):
+        start_t = time.time()
+
+        #render current image (test resolution: 16x16)
+        img_pred = render_img(mlp, 16, 16)
+        optimizer.zero_grad()
+        loss = guidance.train_step(pred_rgb=img_pred, text_embeddings=text_embeddings)
+        #loss.backward()
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
+        print(f"Epoch {epoch+1}, Loss: {loss.item()}")
+        end_t = time.time()
+        if True:
+            print(f"[INFO] epoch {epoch} takes {(end_t - start_t):.4f} seconds.")
 
 
 
 
 def main():
-    img_path = "./Assets/Images/test_image_16_16.png"
-    mlp = NeuralTextureField(width=128, depth=2, pe_enable=True).cuda()
+    seed = 0
+    utils.seed_everything(seed)
+    mlp = NeuralTextureField(width=512, depth=3, pe_enable=False)
+    mlp.load_state_dict(torch.load("./ntf.pth"))
     mlp.to(device)
-    mlp.reset_weights()
+
+    epochs = 100
+    lr = 0.001
+    text_prompt = "a pixel style image of an orange cat head."
+    #text_prompt = "an apple."
+    train_mlp_sd(mlp, epochs, lr, text_prompt)
     
-    train_mlp(mlp, img_path=img_path)
     img = render_img(mlp, width=16, height=16)
-    img.show()
+    img = img.reshape(3, 16, 16).permute(1, 2, 0).contiguous()
+    img = (img + 1)/2
+    img_array = img.cpu().data.numpy()
+    plt.imshow(img_array)
+    plt.show()
 
 
 if __name__ == "__main__":

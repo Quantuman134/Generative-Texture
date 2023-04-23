@@ -62,6 +62,7 @@ class NeuralTextureField(nn.Module):
         #colors = F.tanh(colors)
         return colors
 
+# test main function: train a mlp and render it
 def main():
     import numpy as np
     import matplotlib.pyplot as plt
@@ -77,7 +78,7 @@ def main():
     #training
     dataloader = DataLoader(pd, batch_size=16, shuffle=True)
     learning_rate = 0.001
-    epochs = 2000
+    epochs = 5000
     optimizer = torch.optim.Adam(test_mlp.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
 
@@ -112,7 +113,31 @@ def main():
     plt.imshow(img_array)
     plt.show()
 
+# test main function: use pretrained mlp and directly render the image of mlp
+def main_2():
+    import torch
+    from utils import device
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from Neural_Texture_Field import NeuralTextureField
+    import Img_Asset
+    mlp = NeuralTextureField(width=512, depth=3, pe_enable=False)
+    mlp.load_state_dict(torch.load("./ntf.pth"))
+    #rendering
+    width = 16
+    height = 16
+    img_array = np.zeros((height, width, 3), dtype=np.uint8)
+    for j in range(width):
+        for i in range(height):
+            x = j / width
+            y = i / height
+            coo = torch.tensor([x, y], dtype=torch.float32, device=device)
+            coo = Img_Asset.tensor_transform(coo, mean=[0.5, 0.5], std=[0.5, 0.5])
+            pixel = ((mlp(coo) + 1) * 255/2).cpu().data.numpy()
+            img_array[i, j, :] = pixel
 
+    plt.imshow(img_array)
+    plt.show()
 
 if __name__ == "__main__":
-    main()
+    main_2()

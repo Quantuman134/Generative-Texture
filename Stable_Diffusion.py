@@ -92,7 +92,7 @@ class StableDiffusion(nn.Module):
         return text_embeddings
 
 
-    def train_step(self, text_embeddings, pred_rgb, guidance_scale=100):
+    def train_step(self, pred_rgb, text_embeddings=None, guidance_scale=100):
         
         # interp to 512x512 to be fed into vae.
 

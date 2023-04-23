@@ -20,11 +20,13 @@ class PixelDataSet(Dataset):
         pixel = torch.tensor(pixel, dtype=torch.float32, device=device)
         
         coo = torch.tensor([x, y], dtype=torch.float32, device=device)
+        
+        #random disturb to the coordinate, unwork and temporary disable
         '''
         x = index % self.width
         y = index // self.width
-        #x += random.random()
-        #y += random.random()
+        x += random.random()
+        y += random.random()
         if x > self.width - 1:
             x = self.width - 1
         if y > self.height - 1:
