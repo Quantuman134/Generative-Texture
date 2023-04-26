@@ -9,7 +9,7 @@ if torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
-def seed_everything(seed):
+def seed_everything(seed=0):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)

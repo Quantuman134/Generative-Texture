@@ -10,6 +10,8 @@ from utils import device
 import utils
 import time
 import matplotlib.pyplot as plt
+from One_Layer_Image import OneLayerImage
+import numpy as np
 
 def train_mlp(mlp, img_path):
     pd = PixelDataSet(img_path)
@@ -77,7 +79,26 @@ def train_mlp_sd(mlp, epochs, lr, text_prompt):
         if True:
             print(f"[INFO] epoch {epoch} takes {(end_t - start_t):.4f} seconds.")
 
+def train_oli_sd(mlp, epochs, lr, text_prompt):
+    optimizer = torch.optim.Adam(mlp.parameters(), lr=lr)
+    guidance = StableDiffusion(device=device)
+    text_embeddings = guidance.get_text_embeds(text_prompt, '')
+    scaler = torch.cuda.amp.GradScaler(enabled=False)
 
+    print(f"[INFO] traning starts")
+    total_loss = 0
+    for epoch in range(epochs):
+        start_t = time.time()
+
+        img_pred = mlp(torch.tensor([1], dtype=torch.float32, device=device))
+        optimizer.zero_grad()
+        loss = guidance.train_step(pred_rgb=img_pred, text_embeddings=text_embeddings)
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+        end_t = time.time()
+        if True:
+            print(f"[INFO] epoch {epoch} takes {(end_t - start_t):.4f} seconds.")
 
 
 def main():
@@ -100,8 +121,30 @@ def main():
     plt.imshow(img_array)
     plt.show()
 
+# transfer a  One_Layer_Image with stable-diffusion guidance
+def main_2():
+    seed = 551447
+    utils.seed_everything(seed)
+    save_path = "./Experiments/One_Layer_Image_with_SD_guidance/apple/"
+    img_path = "./Assets/Images/test_image_216_233.jpeg"
+    img = Image.open(img_path)
+    #mlp = OneLayerImage(img=img)
+    mlp = OneLayerImage()
+
+    #training
+    epochs = 1000
+    lr = 0.01
+    #text_prompt = "a pixel style image of an orange cat head."
+    text_prompt = "a red apple on desk, white background"
+    train_oli_sd(mlp=mlp, epochs=epochs, lr=lr, text_prompt=text_prompt)
+
+    img_array = mlp.render_img()
+    img_array = np.clip(img_array, 0, 1)
+    plt.imshow(img_array)
+    plt.show()
+    plt.imsave(save_path + f"ep_{epochs}_3.png", img_array)
 
 if __name__ == "__main__":
-    main()
+    main_2()
 
 
