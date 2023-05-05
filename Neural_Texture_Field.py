@@ -7,7 +7,7 @@ import utils
 ################################
 #the position encoding layer
 class PositionEncoding(nn.Module):
-    def __init__(self, input_dim=2, upper_freq_index=10) -> None:
+    def __init__(self, input_dim=3, upper_freq_index=10) -> None:
         super().__init__()
         self.upper_freq_index = upper_freq_index
         self.freq_indices = torch.tensor([i for i in range(upper_freq_index)], device=device).repeat(input_dim)
@@ -25,7 +25,7 @@ class PositionEncoding(nn.Module):
 # mlp representing a texture image
 # output: color clamped within [-1, 1]    
 class NeuralTextureField(nn.Module):
-    def __init__(self, width, depth, input_dim=2, pixel_dim=3, pe_enable=True) -> None:
+    def __init__(self, width, depth, input_dim=3, pixel_dim=3, pe_enable=True) -> None:
         super().__init__()
         self.width = width
         self.depth = depth
@@ -59,7 +59,7 @@ class NeuralTextureField(nn.Module):
         colors = x
 
         #tanh clamp
-        #colors = F.tanh(colors)
+        colors = F.tanh(colors)
         return colors
 
 # test main function: train a mlp and render it

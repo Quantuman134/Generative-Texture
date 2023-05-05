@@ -8,13 +8,12 @@ from Neural_Texture_Field import NeuralTextureField
 from Img_Asset import PixelDataSet
 import Img_Asset
 def main():
-    mlp = NeuralTextureField(512, 3, pe_enable=False)
-    mlp.load_state_dict(torch.load("./ntf.pth"))
-    img_tensor = render_img(mlp, 16, 16)
-    print(f"img_size: {img_tensor.size()}")
-    img_tensor = img_tensor.reshape(1, 16, 16, 3).permute(0, 3, 1, 2).contiguous()
-    print(f"img_size: {img_tensor.size()}")
-
+    x = torch.tensor([[1, 2, 3], [1, 2, 3]], device=device)
+    y = torch.tensor([[4], [5]], device=device)
+    index = (x == 2).nonzero(as_tuple=False)
+    print(x[1, :] == 2)
+    x[index[:, 0], index[:, 1]] = y[0, :]
+    print(x)
 
 def render_img(mlp, width, height):
     img_tensor = torch.empty((width, height, 3), dtype=torch.float32, device=device)

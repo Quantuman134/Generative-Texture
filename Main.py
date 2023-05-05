@@ -12,6 +12,9 @@ import time
 import matplotlib.pyplot as plt
 from One_Layer_Image import OneLayerImage
 import numpy as np
+from Neural_Texture_Shader import NeuralTextureShader
+from pytorch3d import renderer
+from pytorch3d import io
 
 def train_mlp(mlp, img_path):
     pd = PixelDataSet(img_path)
@@ -100,6 +103,53 @@ def train_oli_sd(mlp, epochs, lr, text_prompt):
         if True:
             print(f"[INFO] epoch {epoch} takes {(end_t - start_t):.4f} seconds.")
 
+def train_tex_mlp_sd(mlp, mesh_obj, epochs, lr, text_prompt):
+    optimizer = torch.optim.Adam(mlp.parameters(), lr=lr)
+    guidance = StableDiffusion(device=device)
+    text_embeddings = guidance.get_text_embeds(text_prompt, '')
+    scaler = torch.cuda.amp.GradScaler(enabled=False)
+
+    #differentiable rendering
+    R, T = renderer.look_at_view_transform(2.7, 0, 135)
+    camera = renderer.FoVPerspectiveCameras(R=R, T=T, device=device)
+
+    #light
+    light = renderer.PointLights(device=device, location=[[0.0, 0.0, -3.0]])
+
+    #renderer
+    raster_setting = renderer.RasterizationSettings(image_size=512, blur_radius=0.0, faces_per_pixel=1)
+
+    mesh_renderer = renderer.MeshRenderer(
+        rasterizer=renderer.MeshRasterizer(
+            cameras=camera,
+            raster_settings=raster_setting
+        ),
+        shader = NeuralTextureShader(
+            tex_mlp=mlp,
+            device=device,
+            cameras=camera,
+            lights=light
+        )
+    )
+
+    print(f"[INFO] traning starts")
+    total_loss = 0
+    for epoch in range(epochs):
+        start_t = time.time()
+
+        #rendering
+        img_pred = mesh_renderer(mesh_obj)[:, :, :, 0:3]
+        img_pred = img_pred.permute(0, 3, 1, 2)
+        optimizer.zero_grad()
+        loss = guidance.train_step(pred_rgb=img_pred, text_embeddings=text_embeddings)
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+        end_t = time.time()
+        if True:
+            print(f"[INFO] epoch {epoch} takes {(end_t - start_t):.4f} seconds.")
+
+    return img_pred
 
 def main():
     seed = 0
@@ -144,7 +194,27 @@ def main_2():
     plt.show()
     plt.imsave(save_path + f"ep_{epochs}_3.png", img_array)
 
+# train a Neural_Texture_Field under specific view rendering with stable-diffusion guidance
+def main_3():
+    seed = 0
+    utils.seed_everything(seed)
+    mesh_path = "./Assets/3D_Model/Cow/cow.obj"
+    mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
+    tex_mlp = NeuralTextureField(width=512, depth=3, input_dim=3, pe_enable=True)
+
+    #training
+    epochs = 100000
+    lr = 0.001
+    text_prompt = "a photo realistic cow"
+    img_pred = train_tex_mlp_sd(mlp=tex_mlp, mesh_obj=mesh_obj, epochs=epochs, lr=lr, text_prompt=text_prompt).permute(0, 2, 3, 1)
+
+    img = img_pred[0, :, :, 0:3].cpu().detach().numpy()
+    plt.imshow(img)
+    plt.show()
+
+    #plt.imsave(save_path + f"ep_{epochs}_3.png", img_array)    
+
 if __name__ == "__main__":
-    main_2()
+    main_3()
 
 
