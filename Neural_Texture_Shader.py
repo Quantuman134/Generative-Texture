@@ -6,6 +6,8 @@ from pytorch3d.renderer.materials import Materials
 from pytorch3d.renderer.mesh import shader
 from pytorch3d.renderer.mesh.rasterizer import Fragments
 from pytorch3d.renderer.utils import TensorProperties
+from pytorch3d.structures.utils import padded_to_list
+from pytorch3d.ops import interpolate_face_attributes
 import torch
 from pytorch3d.structures.meshes import Meshes
 
@@ -17,12 +19,20 @@ class NeuralTextureShader(shader.ShaderBase):
         tex_mlp = None,
         device: Device = "cpu",
         cameras: Optional[TensorProperties] = None,
+        light_enable = True,
         lights: Optional[TensorProperties] = None,
         materials: Optional[Materials] = None,
         blend_params: Optional[BlendParams] = None,
+        mesh: Meshes = None,
+        aux = None,
+        faces = None
         ):
         super().__init__(device, cameras, lights, materials, blend_params)
         self.tex_mlp = tex_mlp
+        self.mesh = mesh
+        self.aux = aux
+        self.faces = faces
+        self.light_enable = light_enable
 
     def forward(self, fragments: Fragments, meshes: Meshes, **kwargs) -> torch.Tensor:
         cameras = super()._get_cameras(**kwargs)
@@ -30,7 +40,8 @@ class NeuralTextureShader(shader.ShaderBase):
         #texels = self.pixel_coordinate_color(fragments=fragments)
         #texels = self.z_coordinate_color(fragments=fragments)
         #texels = self.world_coordinate_color(fragments=fragments)
-        texels = self.texture_sample(tex_mlp=self.tex_mlp, fragments=fragments)
+        texels = self.texture_sample(fragments=fragments)
+        #texels = self.texture_uv_color(fragments=fragments)
         #texels = torch.tensor([1, 0, 0], dtype=torch.float32, device=self.device, requires_grad=True)
         #texels = texels.repeat(torch.unsqueeze(fragments.pix_to_face, 4).size())
         #print("texels:",texels.size())
@@ -40,14 +51,17 @@ class NeuralTextureShader(shader.ShaderBase):
         lights = kwargs.get("lights", self.lights)
         materials = kwargs.get("materials", self.materials)
         blend_params = kwargs.get("blend_params", self.blend_params)
-        colors = shader.phong_shading(
-            meshes=meshes,
-            fragments=fragments,
-            texels=texels,
-            lights=lights,
-            cameras=cameras,
-            materials=materials,
-        )
+        if self.light_enable:
+            colors = shader.phong_shading(
+                meshes=meshes,
+                fragments=fragments,
+                texels=texels,
+                lights=lights,
+                cameras=cameras,
+                materials=materials,
+            )
+        else:
+            colors = texels # no lighting
         znear = kwargs.get("znear", getattr(cameras, "znear", 1.0))
         zfar = kwargs.get("zfar", getattr(cameras, "zfar", 100.0))
         images = shader.softmax_rgb_blend(
@@ -118,28 +132,64 @@ class NeuralTextureShader(shader.ShaderBase):
 
         texels = world_coordinate.unsqueeze(0).unsqueeze(3).repeat(N, 1, 1, K, 1)
         return texels    
-
-    def texture_sample(self, tex_mlp, fragments: Fragments):
+    
+    def texture_uv_color(self, fragments: Fragments):
         N, H, W, K = fragments.pix_to_face.size()
-        depth = fragments.zbuf.reshape(H, W)
-        indices_no_depth = (depth == -1).nonzero(as_tuple=False)
-        #ndc coord
-        h = ((torch.arange(start=0, end=H, device=self.device) * 2 + 1.0) / H - 1.0).unsqueeze(0).transpose(0, 1).repeat(1, W)
-        w = ((torch.arange(start=0, end=W, device=self.device) * 2 + 1.0) / W - 1.0).unsqueeze(0).repeat(H, 1)
-        ndc_coordinate = torch.ones((H, W, 3), device=self.device)
-        ndc_coordinate[:, :, 0] *= -w
-        ndc_coordinate[:, :, 1] *= -h
-        ndc_coordinate[:, :, 2] *= depth
-        world_coordinate = self.cameras.unproject_points(ndc_coordinate, world_coordinates=True)
-        #world_coordinate = world_coordinate.reshape(H * W, 3) * 1000
-        world_coordinate = world_coordinate.reshape(-1, 3)
-        colors = ((tex_mlp(world_coordinate) + 1) / 2).reshape(H, W, 3)
-        colors[indices_no_depth[:, 0], indices_no_depth[:, 1], :] = 0
+        packing_list = [
+            i[j] for i, j in zip([self.aux.verts_uvs.to(self.device)], [self.faces.textures_idx.to(self.device)])
+        ]
+        faces_verts_uvs = torch.cat(packing_list)
+        pixel_uvs = interpolate_face_attributes(
+            fragments.pix_to_face, fragments.bary_coords, faces_verts_uvs
+        ).reshape(-1, 2) #range [0, 1]
+        zero_temp = torch.zeros((H*W, 1), device=self.device)
+        colors = torch.cat((pixel_uvs, zero_temp), dim=1)
+        texels = colors.reshape(N, H, W, K, 3)
+        return texels
+
+    def texture_sample(self, fragments: Fragments):
+        N, H, W, K = fragments.pix_to_face.size()
+        packing_list = [
+            i[j] for i, j in zip([self.aux.verts_uvs.to(self.device)], [self.faces.textures_idx.to(self.device)])
+        ]
+        faces_verts_uvs = torch.cat(packing_list)
+        pixel_uvs = interpolate_face_attributes(
+            fragments.pix_to_face, fragments.bary_coords, faces_verts_uvs
+        ).reshape(-1, 2) #range [0, 1]
+        pixel_uvs = pixel_uvs * 2.0 - 1.0 #range [-1, 1]
+        temps = pixel_uvs[:, 0].clone()
+        pixel_uvs[:, 0] = -pixel_uvs[:, 1]
+        pixel_uvs[:, 1] = temps
+        colors = ((self.tex_mlp(pixel_uvs) + 1) / 2).reshape(H, W, 3)
         print(colors[256, 256, :])
         texels = colors.unsqueeze(0).unsqueeze(3).repeat(N, 1, 1, K, 1)
-        #print(texels[0, 0, 2, 0, :])
         return texels 
     
+    def verts_uvs_list(self):
+        if self._verts_uvs_list is None:
+            if self.isempty():
+                self._verts_uvs_list = [
+                    torch.empty((0, 2), dtype=torch.float32, device=self.device)
+                ] * self._N
+            else:
+                # The number of vertices in the mesh and in verts_uvs can differ
+                # e.g. if a vertex is shared between 3 faces, it can
+                # have up to 3 different uv coordinates.
+                self._verts_uvs_list = list(self._verts_uvs_padded.unbind(0))
+        return self._verts_uvs_list
+    
+    def faces_uvs_list(self):
+        if self._faces_uvs_list is None:
+            if self.isempty():
+                self._faces_uvs_list = [
+                    torch.empty((0, 3), dtype=torch.float32, device=self.device)
+                ] * self._N
+            else:
+                self._faces_uvs_list = padded_to_list(
+                    self._faces_uvs_padded, split_size=self._num_faces_per_mesh
+                )
+        return self._faces_uvs_list
+
 def main():
     from pytorch3d import renderer
     from pytorch3d import io
@@ -149,17 +199,19 @@ def main():
     from utils import device
     from Neural_Texture_Field import NeuralTextureField
     #mesh
-    #mesh_path = "./Assets/3D_Model/Cube/cube.obj"
     mesh_path = "./Assets/3D_Model/Cow/cow.obj"
+    #mesh_path = "./Assets/3D_Model/Cow/cow.obj"
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
-    tex_mlp = NeuralTextureField(width=512, depth=3, input_dim=3, pe_enable=True)
+    verts, faces, aux = io.load_obj(mesh_path)
+    tex_mlp = NeuralTextureField(width=512, depth=3, input_dim=2, pe_enable=True)
+    tex_mlp.load_state_dict(torch.load("./Experiments/mlp_represented_image_training _entire_image/test5_validate/nth.pth"))
 
     #camera
-    R, T = renderer.look_at_view_transform(2.7, 0, 135)
+    R, T = renderer.look_at_view_transform(2.3, 0, 135)
     camera = renderer.FoVPerspectiveCameras(R=R, T=T, device=device)
 
     #light
-    light = renderer.PointLights(device=device, location=[[0.0, 0.0, -3.0]])
+    light = renderer.PointLights(device=device, location=[[0.0, 10.0, 10.0]])
 
     #renderer
     raster_setting = renderer.RasterizationSettings(image_size=512, blur_radius=0.0, faces_per_pixel=1)
@@ -173,7 +225,10 @@ def main():
             tex_mlp=tex_mlp,
             device=device,
             cameras=camera,
-            lights=light
+            light_enable=True,
+            lights=light,
+            aux=aux,
+            faces=faces
         )
     )
 

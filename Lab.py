@@ -8,12 +8,12 @@ from Neural_Texture_Field import NeuralTextureField
 from Img_Asset import PixelDataSet
 import Img_Asset
 def main():
-    x = torch.tensor([[1, 2, 3], [1, 2, 3]], device=device)
-    y = torch.tensor([[4], [5]], device=device)
-    index = (x == 2).nonzero(as_tuple=False)
-    print(x[1, :] == 2)
-    x[index[:, 0], index[:, 1]] = y[0, :]
-    print(x)
+    a = torch.tensor([[1, 2], [3, 4]])
+    b = torch.zeros((2, 1))
+    print(a)
+    a = torch.cat((a, b), 1)
+    print(a)
+    
 
 def render_img(mlp, width, height):
     img_tensor = torch.empty((width, height, 3), dtype=torch.float32, device=device)
