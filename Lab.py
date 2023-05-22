@@ -8,25 +8,17 @@ from Neural_Texture_Field import NeuralTextureField
 from Img_Asset import PixelDataSet
 import Img_Asset
 def main():
-    a = torch.tensor([[1, 2], [3, 4]])
-    b = torch.zeros((2, 1))
-    print(a)
-    a = torch.cat((a, b), 1)
-    print(a)
-    
+    mlp_path =  "./nth.pth"
+    save_path = "./Experiments/Generative_Texture_1/test_experiment/tex.png"
+    tex_net = NeuralTextureField()
+    torch.save(tex_net, mlp_path)
+    tex_net_2 = torch.load(mlp_path)
+    #tex_net.img_save(save_path=save_path)
+    #tex_net.img_show()
+    #tex_net.reset_weights()
+    print(tex_net_2.pe_enable)
 
-def render_img(mlp, width, height):
-    img_tensor = torch.empty((width, height, 3), dtype=torch.float32, device=device)
-    for y in range(height):
-        for x in range(width):
-            x_temp = x / width
-            y_temp = y / height
-            coo = torch.tensor([x_temp, y_temp], dtype=torch.float32, device=device)
-            coo = Img_Asset.tensor_transform(coo, mean=[0.5, 0.5], std=[0.5, 0.5])
-            pixel = mlp(coo)
-            img_tensor[x, y, :] = pixel
-
-    return img_tensor
+    tex_net_2.reset_weights()
 
 if __name__ == "__main__":
     main()

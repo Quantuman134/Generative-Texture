@@ -16,7 +16,7 @@ class NeuralTextureShader(shader.ShaderBase):
     The texels are retreived from a neural represented texture
     """
     def __init__(self,
-        tex_mlp = None,
+        tex_net = None,
         device: Device = "cpu",
         cameras: Optional[TensorProperties] = None,
         light_enable = True,
@@ -28,7 +28,7 @@ class NeuralTextureShader(shader.ShaderBase):
         faces = None
         ):
         super().__init__(device, cameras, lights, materials, blend_params)
-        self.tex_mlp = tex_mlp
+        self.tex_net = tex_net
         self.mesh = mesh
         self.aux = aux
         self.faces = faces
@@ -160,9 +160,9 @@ class NeuralTextureShader(shader.ShaderBase):
         temps = pixel_uvs[:, 0].clone()
         pixel_uvs[:, 0] = -pixel_uvs[:, 1]
         pixel_uvs[:, 1] = temps
-        colors = ((self.tex_mlp(pixel_uvs) + 1) / 2).reshape(H, W, 3)
-        print(colors[256, 256, :])
-        texels = colors.unsqueeze(0).unsqueeze(3).repeat(N, 1, 1, K, 1)
+        colors = ((self.tex_net(pixel_uvs) + 1) / 2).reshape(N, H, W, 3)
+        #print(colors[256, 256, :])
+        texels = colors.unsqueeze(3).repeat(1, 1, 1, K, 1)
         return texels 
     
     def verts_uvs_list(self):
@@ -203,8 +203,8 @@ def main():
     #mesh_path = "./Assets/3D_Model/Cow/cow.obj"
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
     verts, faces, aux = io.load_obj(mesh_path)
-    tex_mlp = NeuralTextureField(width=512, depth=3, input_dim=2, pe_enable=True)
-    tex_mlp.load_state_dict(torch.load("./Experiments/mlp_represented_image_training _entire_image/test5_validate/nth.pth"))
+    tex_net = NeuralTextureField(width=512, depth=3, input_dim=2, pe_enable=True)
+    tex_net.load_state_dict(torch.load("./Experiments/mlp_represented_image_training _entire_image/test5_validate/nth.pth"))
 
     #camera
     R, T = renderer.look_at_view_transform(2.3, 0, 135)
@@ -222,7 +222,7 @@ def main():
             raster_settings=raster_setting
         ),
         shader = NeuralTextureShader(
-            tex_mlp=tex_mlp,
+            tex_net=tex_net,
             device=device,
             cameras=camera,
             light_enable=True,

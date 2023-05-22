@@ -66,7 +66,7 @@ class NeuralTextureField(nn.Module):
         #colors = F.tanh(colors)
         return colors
     
-    def render_img(self, width, height, disturb=False):
+    def render_img(self, width=512, height=512, disturb=False):
         #only support one RGB image rendering now 
         coo_tensor = torch.zeros((height, width, 2), dtype=torch.float32, device=device)
         j = torch.arange(start=0, end=height, device=device).unsqueeze(0).transpose(0, 1).repeat(1, width)
@@ -85,18 +85,22 @@ class NeuralTextureField(nn.Module):
         img_tensor = img_tensor.reshape(1, height, width, 3).permute(0, 3, 1, 2).contiguous()
         return img_tensor
     
-    def img_show(self, width, height):
+    def img_show(self, width=512, height=512):
         img_tensor = self.render_img(width, height)
         img_array = img_tensor.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
         plt.imshow(img_array)
         plt.show()
     
-    def img_save(self, width, height, save_path):
+    def img_save(self, save_path, width=512, height=512):
         img_tensor = self.render_img(width, height)
         img_array = img_tensor.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
         img_array = np.clip(img_array, 0, 1)
         plt.imsave(save_path, img_array)
-        
+
+    def net_save(self, save_path):
+        #format of saved object is .pth
+        torch.save(self, save_path)
+
 # test main function: train a mlp with entire image and render it, and save the mlp
 def main():
     from torchvision import transforms
@@ -111,8 +115,8 @@ def main():
 
     width = 512
     height = 512
-    img_path = "./Assets/Images/Gaussian_Noise.png"
-    save_path = "./Experiments/mlp_represented_image_training _entire_image/gaussian_noise2/"
+    img_path = "./Assets/Images/car_texture.png"
+    save_path = "./Assets/Image_MLP/nascar/"
     img_train = Image.open(img_path).resize((width, height))
     img_train.save(save_path + "train.png")
     img_train = transforms.ToTensor()(img_train).to(device).unsqueeze(0)[:,0:3,:,:] # [1, 3, H, W]
@@ -139,12 +143,12 @@ def main():
         if (epoch+1) % 100 == 0:
             print(f"Epoch {epoch+1}, Loss: {total_loss}")
             total_loss = 0
-        if (epoch+1) % 1000 == 0:
+        if (epoch+1) % 2000 == 0:
             test_mlp.img_save(width, height, save_path=save_path+f"ep{epoch+1}.png")
 
     if not arg.ns:
         model_scripted = torch.jit.script(test_mlp)
-        model_scripted.save(save_path+'nth.pt')
+        model_scripted.save(save_path+'nth.pth')
         test_mlp.img_show(width, height)
         test_mlp.img_save(width, height, save_path=(save_path + f"{width}_{height}.png"))
 
