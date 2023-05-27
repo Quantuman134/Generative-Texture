@@ -106,6 +106,7 @@ def main():
     from torchvision import transforms
     from PIL import Image
     import argparse
+    from Neural_Texture_Field import NeuralTextureField
 
     parse = argparse.ArgumentParser()
     parse.add_argument('--lr', type=float, help='learning rate')
@@ -132,6 +133,7 @@ def main():
     criterion = nn.MSELoss()
     
     total_loss = 0
+    
     for epoch in range(epochs): 
         optimizer.zero_grad()     
         img_tensor = test_mlp.render_img(width, height, disturb=True)
@@ -144,13 +146,12 @@ def main():
             print(f"Epoch {epoch+1}, Loss: {total_loss}")
             total_loss = 0
         if (epoch+1) % 2000 == 0:
-            test_mlp.img_save(width, height, save_path=save_path+f"ep{epoch+1}.png")
-
+            test_mlp.img_save(width=width, height=height, save_path=save_path+f"ep{epoch+1}.png")
+    
     if not arg.ns:
-        model_scripted = torch.jit.script(test_mlp)
-        model_scripted.save(save_path+'nth.pth')
+        test_mlp.net_save(save_path=save_path+"nth.pth")
         test_mlp.img_show(width, height)
-        test_mlp.img_save(width, height, save_path=(save_path + f"{width}_{height}.png"))
+        test_mlp.img_save(width=width, height=height, save_path=(save_path + f"{width}_{height}.png"))
 
 # test main function: use pretrained mlp and directly render the image of mlp
 def main_2():
@@ -162,7 +163,6 @@ def main_2():
     mlp.load_state_dict(torch.load(load_path))
     #validation rendering
     mlp.img_show(512, 512)
-
 
 if __name__ == "__main__":
     main()

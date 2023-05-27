@@ -259,16 +259,15 @@ def main_3():
 # train a Neural_Texture_Field view under all around view of model with stable-diffusion guidance
 def main_4():
     #configuration
-    seed = 0
+    seed = 5445618
     utils.seed_everything(seed)
-    mesh_path = "./Assets/3D_Model/Cow/cow.obj"
-    mlp_path = "./Experiments/mlp_represented_image_training _entire_image/gaussian_noise/nth.pth"
-    save_path = "./Experiments/Generative_Texture_1/test_experiment2"
-    text_prompt = "a photo realistic cow"
-    epochs = 5000
+    mesh_path = "./Assets/3D_Model/Nascar/mesh.obj"
+    mlp_path = "./Assets/Image_MLP/nascar/nth.pth"
+    save_path = "./Experiments/Generative_Texture_1/test_experiment5"
+    text_prompt = "A next gen nascar"
+    epochs = 100000
     lr = 0.000001
-    tex_net = NeuralTextureField()
-    tex_net.load_state_dict(torch.load(mlp_path))
+    tex_net = torch.load(mlp_path)
     texture_generator = TextureGenerator(mesh_path=mesh_path, tex_net=tex_net)
 
     #train step

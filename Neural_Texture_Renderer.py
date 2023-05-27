@@ -40,8 +40,8 @@ class NeuralTextureRenderer:
         self.lights = renderer.PointLights(location=locations, device=self.device)
     
     def render_around(self, mesh_data, tex_net):
-        dist = 2.7
-        elev = 0
+        dist = 1.5
+        elev = 45
         image_tensor_list = []
         for azim in range(0, 360, 45):
             self.camera_setting(dist=dist, elev=elev, azim=azim)
