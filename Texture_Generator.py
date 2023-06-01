@@ -26,6 +26,19 @@ class TextureGenerator:
         text_embeddings = guidance.get_text_embeds(text_prompt, '')
         scaler = torch.cuda.amp.GradScaler(enabled=False)
 
+        
+        #save initial data
+        if save_path is not None:
+            self.tex_net.img_save(save_path=save_path + f"/tex_initial.png")
+            img_tensor_list = self.renderer.render_around(self.mesh_data, self.tex_net)
+            i = 0
+            for img_tensor in img_tensor_list:
+                i += 1
+                img_array = img_tensor[0, :, :, 0:3].cpu().detach().numpy()
+                img_array = np.clip(img_array, 0, 1)
+                plt.imsave(save_path + f"/initial_{i}.png", img_array)
+        del img_tensor_list
+                
         #range of camera position
         dist_range = [2.0, 3.0]
         elev_range = [0.0, 360.0]
@@ -62,6 +75,9 @@ class TextureGenerator:
                 print(f"[INFO] epoch {epoch} takes {(end_t - start_t):.4f} seconds.")
             
         print(f"[INFO] traning ends")
+
+        del guidance
+        
         if save_path is not None:
             self.tex_net.img_save(save_path=save_path + f"/tex_result.png")
             img_tensor_list = self.renderer.render_around(self.mesh_data, self.tex_net)

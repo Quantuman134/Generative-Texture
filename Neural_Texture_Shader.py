@@ -240,5 +240,53 @@ def main():
     plt.imshow(img)
     plt.show()
 
+def main_2():
+    from pytorch3d import renderer
+    from pytorch3d import io
+    import matplotlib.pyplot as plt
+    import torch
+    from Neural_Texture_Shader import NeuralTextureShader
+    from utils import device
+    from Differentialble_Texture import DiffTexture
+    #mesh
+    mesh_path = "./Assets/3D_Model/Cow/cow.obj"
+    mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
+    verts, faces, aux = io.load_obj(mesh_path)
+    tex_net = DiffTexture(size=(2048, 2048))
+
+    #camera
+    R, T = renderer.look_at_view_transform(2.3, 0, 135)
+    camera = renderer.FoVPerspectiveCameras(R=R, T=T, device=device)
+
+    #light
+    light = renderer.PointLights(device=device, location=[[0.0, 10.0, 10.0]])
+
+    #renderer
+    raster_setting = renderer.RasterizationSettings(image_size=512, blur_radius=0.0, faces_per_pixel=1)
+
+    mesh_renderer = renderer.MeshRenderer(
+        rasterizer=renderer.MeshRasterizer(
+            cameras=camera,
+            raster_settings=raster_setting
+        ),
+        shader = NeuralTextureShader(
+            tex_net=tex_net,
+            device=device,
+            cameras=camera,
+            light_enable=True,
+            lights=light,
+            aux=aux,
+            faces=faces
+        )
+    )
+
+    #rendering
+    image_tensor = mesh_renderer(mesh_obj)
+    #loss = image_tensor.sum()
+    #loss.backward()
+    img = image_tensor[0, :, :, 0:3].cpu().detach().numpy()
+    plt.imshow(img)
+    plt.show()
+
 if __name__ == "__main__":
-    main()
+    main_2()

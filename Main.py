@@ -16,6 +16,7 @@ from Neural_Texture_Shader import NeuralTextureShader
 from pytorch3d import renderer
 from pytorch3d import io
 from Texture_Generator import TextureGenerator
+from Differentialble_Texture import DiffTexture
 
 def train_mlp(mlp, img_path):
     pd = PixelDataSet(img_path)
@@ -119,7 +120,7 @@ def train_tex_mlp_sd(mlp, mesh_obj, faces, aux, epochs, lr, text_prompt, save_pa
             raster_settings=raster_setting
         ),
         shader = NeuralTextureShader(
-            tex_mlp=mlp,
+            tex_net=mlp,
             device=device,
             cameras=camera,
             light_enable=True,
@@ -212,12 +213,13 @@ def main_2_2():
     seed = 945
     utils.seed_everything(seed)
     save_path = "./Experiments/SDS_in_MLP_Represented_Image/pixel_cat2/test8_lr00001"
-    mlp = NeuralTextureField(input_dim=2, width=512, depth=3, pe_enable=True)
-    mlp.load_state_dict(torch.load("./Experiments/mlp_represented_image_training _entire_image/gaussian_noise/nth.pth"))
+    #mlp = NeuralTextureField(input_dim=2, width=512, depth=3, pe_enable=True)
+    #mlp.load_state_dict(torch.load("./Experiments/mlp_represented_image_training _entire_image/gaussian_noise/nth.pth"))
+    mlp = DiffTexture(size=(2048, 2048))
 
     #training
-    epochs = 100000
-    lr = 0.00001
+    epochs = 1000
+    lr = 0.1
     text_prompt = "a photo realistic image of an orange cat head, white background."
     #text_prompt = "a red apple on desk, white background"
     train_mlp_sd(mlp=mlp, epochs=epochs, lr=lr, text_prompt=text_prompt, save_path=save_path)
@@ -238,15 +240,16 @@ def main_3():
     mesh_path = "./Assets/3D_Model/Cow/cow.obj"
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
     verts, faces, aux = io.load_obj(mesh_path, device=device)
-    mlp_path = "./Experiments/mlp_represented_image_training _entire_image/gaussian_noise/nth.pth"
-    tex_mlp = NeuralTextureField(width=512, depth=3, input_dim=2, pe_enable=True)
-    tex_mlp.load_state_dict(torch.load(mlp_path))
+    #mlp_path = "./Experiments/mlp_represented_image_training _entire_image/gaussian_noise/nth.pth"
+    #tex_mlp = NeuralTextureField(width=512, depth=3, input_dim=2, pe_enable=True)
+    #tex_mlp.load_state_dict(torch.load(mlp_path))
+    tex_mlp = DiffTexture(size=(2048, 2048))
 
     #training
-    epochs = 5000
-    lr = 0.00001
+    epochs = 200
+    lr = 0.05
     text_prompt = "a photo realistic cow"
-    save_path = "./Experiments/SDS_in_MLP_Represented_Texture_Specific_View/Cow_Experiment/cow6"
+    save_path = "./Experiments/SDS_in_MLP_Represented_Texture_Specific_View/Cow_Experiment_DiffTex/cow2"
     #text_prompt = "a cat"
     img_pred = train_tex_mlp_sd(mlp=tex_mlp, mesh_obj=mesh_obj, faces=faces, aux=aux, epochs=epochs, lr=lr, text_prompt=text_prompt, save_path=save_path).permute(0, 2, 3, 1)
 
@@ -259,15 +262,18 @@ def main_3():
 # train a Neural_Texture_Field view under all around view of model with stable-diffusion guidance
 def main_4():
     #configuration
-    seed = 5445618
+    seed = 0
+    mesh_path = "./Assets/3D_Model/Cow/cow.obj"
     utils.seed_everything(seed)
-    mesh_path = "./Assets/3D_Model/Nascar/mesh.obj"
-    mlp_path = "./Assets/Image_MLP/nascar/nth.pth"
-    save_path = "./Experiments/Generative_Texture_1/test_experiment5"
-    text_prompt = "A next gen nascar"
-    epochs = 100000
-    lr = 0.000001
-    tex_net = torch.load(mlp_path)
+    text_prompt = "a photo realistic cow"
+    #mesh_path = "./Assets/3D_Model/Nascar/mesh.obj"
+    #mlp_path = "./Assets/Image_MLP/nascar/nth.pth"
+    save_path = "./Experiments/Generative_Texture_1/diff_tex_experiment10"
+    #text_prompt = "A next gen nascar"
+    epochs = 1000
+    lr = 10
+    #tex_net = torch.load(mlp_path)
+    tex_net = DiffTexture(size=(512, 512))
     texture_generator = TextureGenerator(mesh_path=mesh_path, tex_net=tex_net)
 
     #train step
