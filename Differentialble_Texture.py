@@ -25,7 +25,6 @@ class DiffTexture(nn.Module):
 
     def set_image(self, img_tensor):
         #img_tensor size: [B, C, H, W], color value [0, 1]
-        print(img_tensor.size())
         B, C, H, W = img_tensor.size()
         img_tensor = img_tensor * 2 - 1.0
         print(img_tensor.size())
@@ -142,7 +141,6 @@ def main_2():
     import_img_path = "./test_1.png"
     img = Image.open(import_img_path)
     img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
-    print(img_tensor.size())
 
     diff_tex.set_image(img_tensor=img_tensor)
 
