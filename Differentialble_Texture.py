@@ -1,6 +1,7 @@
 from typing import Iterator
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 from utils import device
 import matplotlib.pyplot as plt
@@ -20,13 +21,15 @@ class DiffTexture(nn.Module):
         self.set_gaussian()
 
     def set_gaussian(self, mean=0, sig=1):
-        self.texture = torch.nn.Parameter(torch.randn((self.width, self.height, 3), dtype=torch.float32, device=device, requires_grad=True) * sig + mean)
+        self.texture = torch.nn.Parameter(torch.randn((self.height, self.width, 3), dtype=torch.float32, device=device, requires_grad=True) * sig + mean)
 
     def set_image(self, img_tensor):
-        #img_tensor size: [W, H, 3], color value [0, 1]
-        W, H, C = img_tensor.size()
-        img_tensor = img_tensor.permute(2, 0, 1).reshape(1, C, W, H) * 2 - 1.0
-        img_tensor = torch.nn.functional.interpolate(img_tensor, size=(1, C, self.width, self.height))
+        #img_tensor size: [B, C, H, W], color value [0, 1]
+        print(img_tensor.size())
+        B, C, H, W = img_tensor.size()
+        img_tensor = img_tensor * 2 - 1.0
+        print(img_tensor.size())
+        img_tensor = torch.nn.functional.interpolate(img_tensor, size=(1, C, self.height, self.width))
         self.texture = torch.nn.Parameter(img_tensor.sequeeze().permute(1, 2, 0))
         self.texture.device = device
         self.texture.requires_grad = True
@@ -52,6 +55,8 @@ class DiffTexture(nn.Module):
         b = uv[1] - v_0
         color = (self.texture[u_0, v_0] * a + self.texture[u_1, v_0] * (1 - a)) * b \
         + (self.texture[u_0, v_1] * a + self.texture[u_1, v_1] * (1 - a)) * (1 - b)
+
+        color = F.tanh(color)
         return color
     
     def texture_batch_sample(self, uvs):
@@ -66,9 +71,12 @@ class DiffTexture(nn.Module):
         b = (uvs[:, 1] - vs_0).reshape(-1, 1)
         colors = (self.texture[us_0, vs_0] * a + self.texture[us_1, vs_0] * (1 - a)) * b \
         + (self.texture[us_0, vs_1] * a + self.texture[us_1, vs_1] * (1 - a)) * (1 - b)
+
+        colors = F.tanh(colors)
         return colors
     
     def render_img(self, width=512, height=512):
+        #output: 'torch' or 'rgb', torch: expected output range [-1, 1], rgb: expected output range [0, 1]
         coo_tensor = torch.zeros((height, width, 2), dtype=torch.float32, device=device)
         j = torch.arange(start=0, end=height, device=device).unsqueeze(0).transpose(0, 1).repeat(1, width)
         i = torch.arange(start=0, end=height, device=device).unsqueeze(0).repeat(height, 1)
@@ -100,7 +108,109 @@ class DiffTexture(nn.Module):
 def main():
     texture = DiffTexture()
     texture.img_show(512, 512)
+
+# training a differentiable texture with stable-diffusion guidance
+def main_2():
+    from torch.utils.tensorboard import SummaryWriter
+    import utils
+    from Stable_Diffusion import StableDiffusion
+    import time
+    from PIL import Image
+    from torchvision import transforms
+
+    seed = 0
+    utils.seed_everything(seed)
+    diff_tex = DiffTexture(size=(512, 512))
+    sig = 1
+    diff_tex.set_gaussian(sig = sig)
+    guidance = StableDiffusion(device=device)
+    scaler = torch.cuda.amp.GradScaler(enabled=False)
     
+    #configuring
+    text_prompt = "an orange cat head"
+    text_embeddings = guidance.get_text_embeds(text_prompt, '')
+    min_t = 0.02
+    max_t = 0.02
+    epochs = 2000
+    lr = 0.1
+    optimizer = torch.optim.Adam(diff_tex.parameters(), lr=lr)
+    info_period: int = 50
+    image_save = True
+    save_path = "./Experiments/Differentiable_Image_Generation/cat_head/lr_01_002_noise_half_noise_img/"
+    save_period: int = 50
+
+    import_img_path = "./test_1.png"
+    img = Image.open(import_img_path)
+    img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
+    print(img_tensor.size())
+
+    diff_tex.set_image(img_tensor=img_tensor)
+
+    #tensorboard
+    writer = SummaryWriter()
+
+    #training
+    start_t = time.time()
+    total_loss = 0
+    for epoch in range(epochs):
+        optimizer.zero_grad()
+        img_pred = diff_tex.render_img()
+        if image_save and (epoch+1)%save_period == 0:
+            tensor_for_backward, p_loss, noise_rgb, img_noisy_rgb, noise_pred_rgb, img_denoised_rgb, pred_diff_rgb, t\
+              = guidance.train_step(pred_rgb=img_pred, text_embeddings=text_embeddings, min_t=min_t, max_t=max_t, detailed=True)
+        else:
+            tensor_for_backward, p_loss = guidance.train_step(pred_rgb=img_pred, text_embeddings=text_embeddings, min_t=min_t, max_t=max_t)
+
+        total_loss += p_loss
+        scaler.scale(tensor_for_backward).backward()
+        scaler.step(optimizer)
+        scaler.update()
+        if (epoch+1)%info_period == 0:
+            end_t = time.time()
+            print(f"[INFO] epoch {epoch+1} takes {(end_t - start_t):.4f} seconds. loss = {total_loss / info_period}")
+            writer.add_scalar("Loss/train", total_loss / info_period, epoch)
+            total_loss = 0
+            start_t = end_t
+        if image_save and (epoch+1)%save_period == 0:
+            print(f"stable_diffusions_step: {t.item()}")
+            diff_tex.img_save(save_path=save_path + f"ep_{epoch+1}.png")
+            
+            #added_noise
+            img_array = noise_rgb.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
+            img_array = np.clip(img_array, 0, 1)
+            plt.imsave(save_path + f"ep_{epoch+1}_added_noise.png", img_array)
+
+            #noisy img
+            img_array = img_noisy_rgb.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
+            img_array = np.clip(img_array, 0, 1)
+            plt.imsave(save_path + f"ep_{epoch+1}_noisy_img.png", img_array)
+
+            #pred_noise
+            img_array = noise_pred_rgb.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
+            img_array = np.clip(img_array, 0, 1)
+            plt.imsave(save_path + f"ep_{epoch+1}_pred_noise.png", img_array)
+
+            #denoised img
+            img_array = img_denoised_rgb.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
+            img_array = np.clip(img_array, 0, 1)
+            plt.imsave(save_path + f"ep_{epoch+1}_denoised_img.png", img_array)
+
+            #noise difference
+            img_array = pred_diff_rgb.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
+            img_array = np.clip(img_array, 0, 1)
+            plt.imsave(save_path + f"ep_{epoch+1}_noise_diff.png", img_array)
+            
+    
+    writer.flush()
+    writer.close()
+
+    #rendering
+    img_tensor = diff_tex.render_img()
+    img_tensor = img_tensor.squeeze(0).permute(1, 2, 0)
+    img_array = img_tensor.cpu().detach().numpy()
+    img_array = np.clip(img_array, 0, 1)
+    plt.imshow(img_array)
+    plt.show()
 
 if __name__ == '__main__':
-    main()
+    main_2()

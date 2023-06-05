@@ -14,10 +14,10 @@ from torch.cuda.amp import custom_bwd, custom_fwd
 class SpecifyGradient(torch.autograd.Function):
     @staticmethod
     @custom_fwd
-    def forward(ctx, input_tensor, gt_grad):
-        ctx.save_for_backward(gt_grad) 
+    def forward(ctx, latents, gt_grad):
+        ctx.save_for_backward(gt_grad)
         # we return a dummy value 1, which will be scaled by amp's scaler so we get the scale in backward.
-        return torch.ones([1], device=input_tensor.device, dtype=input_tensor.dtype) 
+        return torch.ones([1], device=latents.device, dtype=latents.dtype)
 
     @staticmethod
     @custom_bwd
@@ -65,7 +65,7 @@ class StableDiffusion(nn.Module):
         self.scheduler = DDIMScheduler.from_pretrained(model_key, subfolder="scheduler")
         # self.scheduler = PNDMScheduler.from_pretrained(model_key, subfolder="scheduler")
 
-        self.num_train_timesteps = self.scheduler.config.num_train_timesteps
+        self.num_train_timesteps = self.scheduler.config.num_train_timesteps #default is 1000
         self.min_step = int(self.num_train_timesteps * 0.02)
         self.max_step = int(self.num_train_timesteps * 0.98)
         self.alphas = self.scheduler.alphas_cumprod.to(self.device) # for convenience
@@ -92,13 +92,15 @@ class StableDiffusion(nn.Module):
         return text_embeddings
 
 
-    def train_step(self, pred_rgb, text_embeddings=None, guidance_scale=100):
+    def train_step(self, pred_rgb, text_embeddings=None, guidance_scale=100, min_t=0.02, max_t=0.98, detailed=False):
         
         # interp to 512x512 to be fed into vae.
 
         pred_rgb_512 = F.interpolate(pred_rgb, (512, 512), mode='bilinear', align_corners=False)
 
         # timestep ~ U(0.02, 0.98) to avoid very high/low noise level
+        self.min_step = int(self.num_train_timesteps * min_t)
+        self.max_step = int(self.num_train_timesteps * max_t)
         t = torch.randint(self.min_step, self.max_step + 1, [1], dtype=torch.long, device=self.device)
 
         # encode image into latents with vae, requires grad!
@@ -121,15 +123,26 @@ class StableDiffusion(nn.Module):
         w = (1 - self.alphas[t])
         # w = self.alphas[t] ** 0.5 * (1 - self.alphas[t])
         grad = w * (noise_pred - noise)
+        
+        #peseudo-loss
+        p_loss = torch.sqrt(torch.mean(torch.pow((noise_pred - noise), 2))).item()
 
         # clip grad for stable training?
         # grad = grad.clamp(-10, 10)
         grad = torch.nan_to_num(grad)
 
         # since we omitted an item in grad, we need to use the custom function to specify the gradient
-        loss = SpecifyGradient.apply(latents, grad) 
+        tensor_for_backward = SpecifyGradient.apply(latents, grad) 
 
-        return loss 
+        #output detailed information
+        if detailed:
+            self.scheduler.set_timesteps(self.num_train_timesteps)
+
+            return tensor_for_backward, p_loss, self.decode_latents(noise), \
+            self.decode_latents(latents_noisy), self.decode_latents(noise_pred), \
+            self.decode_latents(self.scheduler.step(noise_pred, t, latents)['prev_sample']), \
+            self.decode_latents(noise_pred - noise), t
+        return tensor_for_backward, p_loss 
 
     def produce_latents(self, text_embeddings, height=512, width=512, num_inference_steps=50, guidance_scale=7.5, latents=None):
 
@@ -205,6 +218,8 @@ if __name__ == '__main__':
 
     import argparse
     import matplotlib.pyplot as plt
+    from PIL import Image
+    from torchvision import transforms
 
     parser = argparse.ArgumentParser()
     parser.add_argument('prompt', type=str)
@@ -215,6 +230,7 @@ if __name__ == '__main__':
     parser.add_argument('-W', type=int, default=512)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--steps', type=int, default=50)
+    parser.add_argument('--img', type=str, default=None)
     opt = parser.parse_args()
 
     seed_everything(opt.seed)
@@ -223,7 +239,16 @@ if __name__ == '__main__':
 
     sd = StableDiffusion(device, opt.sd_version, opt.hf_key)
 
-    imgs = sd.prompt_to_img(opt.prompt, opt.negative, opt.H, opt.W, opt.steps)
+    if opt.img is not None:
+        img = Image.open(opt.img)
+        img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
+        img_tensor = img_tensor.to(device)
+        #img_tensor = F.interpolate(img_tensor, (512, 512), mode='bilinear', align_corners=False)
+        print(img_tensor.device)
+        latents = sd.encode_imgs(imgs=img_tensor)
+        imgs = sd.prompt_to_img(opt.prompt, opt.negative, opt.H, opt.W, opt.steps, latents=latents)
+    else:
+        imgs = sd.prompt_to_img(opt.prompt, opt.negative, opt.H, opt.W, opt.steps)
 
     # visualize image
     plt.imshow(imgs[0])

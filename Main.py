@@ -59,15 +59,15 @@ def train_mlp_sd(mlp, epochs, lr, text_prompt, save_path):
     for epoch in range(epochs):
         start_t = time.time()
 
+        optimizer.zero_grad()
         #render current image (test resolution: 512x512)
         img_pred = mlp.render_img(512, 512)
-        
         if (epoch+1)%1000 == 0:
             img_array = mlp.render_img(512, 512).squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
             img_array = np.clip(img_array, 0, 1)
             plt.imsave(save_path + f"/ep{epoch+1}.png", img_array)
 
-        optimizer.zero_grad()
+        
         loss = guidance.train_step(pred_rgb=img_pred, text_embeddings=text_embeddings)
         #loss.backward()
         scaler.scale(loss).backward()
