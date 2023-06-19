@@ -247,7 +247,7 @@ def main_2():
     import torch
     from Neural_Texture_Shader import NeuralTextureShader
     from utils import device
-    from Differentialble_Texture import DiffTexture
+    from Differentiable_Texture import DiffTexture
     #mesh
     mesh_path = "./Assets/3D_Model/Cow/cow.obj"
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)

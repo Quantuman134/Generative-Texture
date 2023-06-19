@@ -25,7 +25,7 @@ class SpecifyGradient(torch.autograd.Function):
         gt_grad, = ctx.saved_tensors
         gt_grad = gt_grad * grad_scale
         return gt_grad, None
-
+Requirements
 def seed_everything(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -44,12 +44,7 @@ class StableDiffusion(nn.Module):
         if hf_key is not None:
             print(f'[INFO] using hugging face custom model key: {hf_key}')
             model_key = hf_key
-        elif self.sd_version == '2.1':
-            model_key = "stabilityai/stable-diffusion-2-1-base"
-        elif self.sd_version == '2.0':
-            model_key = "stabilityai/stable-diffusion-2-base"
-        elif self.sd_version == '1.5':
-            model_key = "runwayml/stable-diffusion-v1-5"
+        elif self.sd_version == '2.1':Requirements
         else:
             raise ValueError(f'Stable-diffusion version {self.sd_version} not supported.')
 
@@ -117,7 +112,7 @@ class StableDiffusion(nn.Module):
 
         # perform guidance (high scale from paper!)
         noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
-        noise_pred = noise_pred_text + guidance_scale * (noise_pred_text - noise_pred_uncond)
+        nois1e_pred = noise_pred_text + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
         # w(t), sigma_t^2
         w = (1 - self.alphas[t])

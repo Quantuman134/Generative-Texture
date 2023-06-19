@@ -16,7 +16,7 @@ from Neural_Texture_Shader import NeuralTextureShader
 from pytorch3d import renderer
 from pytorch3d import io
 from Texture_Generator import TextureGenerator
-from Differentialble_Texture import DiffTexture
+from Differentiable_Texture import DiffTexture
 
 def train_mlp(mlp, img_path):
     pd = PixelDataSet(img_path)

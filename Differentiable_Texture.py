@@ -27,11 +27,9 @@ class DiffTexture(nn.Module):
         #img_tensor size: [B, C, H, W], color value [0, 1]
         B, C, H, W = img_tensor.size()
         img_tensor = img_tensor * 2 - 1.0
-        print(img_tensor.size())
-        img_tensor = torch.nn.functional.interpolate(img_tensor, size=(1, C, self.height, self.width))
-        self.texture = torch.nn.Parameter(img_tensor.sequeeze().permute(1, 2, 0))
-        self.texture.device = device
-        self.texture.requires_grad = True
+        img_tensor = torch.nn.functional.interpolate(img_tensor, size=(self.height, self.width))
+        img_tensor = img_tensor.to(device)
+        self.texture = torch.nn.Parameter(img_tensor.squeeze().permute(1, 2, 0))
         
 
     def forward(self, uvs):
@@ -105,7 +103,18 @@ class DiffTexture(nn.Module):
 
 
 def main():
+    from torch.utils.tensorboard import SummaryWriter
+    import utils
+    from Stable_Diffusion import StableDiffusion
+    import time
+    from PIL import Image
+    from torchvision import transforms
     texture = DiffTexture()
+    import_img_path = "./test_1.png"
+    img = Image.open(import_img_path)
+    img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
+
+    texture.set_image(img_tensor=img_tensor)
     texture.img_show(512, 512)
 
 # training a differentiable texture with stable-diffusion guidance
@@ -129,20 +138,20 @@ def main_2():
     text_prompt = "an orange cat head"
     text_embeddings = guidance.get_text_embeds(text_prompt, '')
     min_t = 0.02
-    max_t = 0.02
-    epochs = 2000
+    max_t = 0.98
+    epochs = 1000
     lr = 0.1
+
+    #import_img_path = "./test_3.png"
+    #img = Image.open(import_img_path)
+    #img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
+    #diff_tex.set_image(img_tensor=img_tensor)
+
     optimizer = torch.optim.Adam(diff_tex.parameters(), lr=lr)
     info_period: int = 50
     image_save = True
-    save_path = "./Experiments/Differentiable_Image_Generation/cat_head/lr_01_002_noise_half_noise_img/"
+    save_path = "./Experiments/Differentiable_Image_Generation/cat_head/structure_noise_comparsion/annealation_test/no_annealed/"
     save_period: int = 50
-
-    import_img_path = "./test_1.png"
-    img = Image.open(import_img_path)
-    img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
-
-    diff_tex.set_image(img_tensor=img_tensor)
 
     #tensorboard
     writer = SummaryWriter()
