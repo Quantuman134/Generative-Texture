@@ -142,15 +142,16 @@ def main_2():
     epochs = 1000
     lr = 0.1
 
-    #import_img_path = "./test_3.png"
-    #img = Image.open(import_img_path)
-    #img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
-    #diff_tex.set_image(img_tensor=img_tensor)
+    #import_img_path = "./Assets/Images/Gaussian_Noise_Latent.png"
+    import_img_path = "./test.png"
+    img = Image.open(import_img_path)
+    img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
+    diff_tex.set_image(img_tensor=img_tensor)
 
     optimizer = torch.optim.Adam(diff_tex.parameters(), lr=lr)
     info_period: int = 50
     image_save = True
-    save_path = "./Experiments/Differentiable_Image_Generation/cat_head/structure_noise_comparsion/annealation_test/no_annealed/"
+    save_path = "./Experiments/Differentiable_Image_Generation/structure_noise_comparison/grad_image/noise_098_clear/"
     save_period: int = 50
 
     #tensorboard
@@ -160,6 +161,12 @@ def main_2():
     start_t = time.time()
     total_loss = 0
     for epoch in range(epochs):
+        min_t = 0.98
+        max_t = 0.98
+        #if epoch < 500:
+        #    min_t = 0.99
+
+
         optimizer.zero_grad()
         img_pred = diff_tex.render_img()
         if image_save and (epoch+1)%save_period == 0:
@@ -171,17 +178,25 @@ def main_2():
         total_loss += p_loss
         scaler.scale(tensor_for_backward).backward()
         scaler.step(optimizer)
+        #custom_lr_adjust(optimizer, epoch, lr)
         scaler.update()
+
         if (epoch+1)%info_period == 0:
             end_t = time.time()
             print(f"[INFO] epoch {epoch+1} takes {(end_t - start_t):.4f} seconds. loss = {total_loss / info_period}")
+            print(f"learning rate = {optimizer.param_groups[0]['lr']}")
             writer.add_scalar("Loss/train", total_loss / info_period, epoch)
             total_loss = 0
             start_t = end_t
         if image_save and (epoch+1)%save_period == 0:
-            print(f"stable_diffusions_step: {t.item()}")
             diff_tex.img_save(save_path=save_path + f"ep_{epoch+1}.png")
             
+            #image_grad
+            grad_tensor = (diff_tex.texture.grad * 200 + 1)/2 
+            img_array = grad_tensor.cpu().detach().numpy()
+            img_array = np.clip(img_array, 0, 1)
+            plt.imsave(save_path + f"ep_{epoch+1}_image_grad.png", img_array)
+
             #added_noise
             img_array = noise_rgb.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
             img_array = np.clip(img_array, 0, 1)
@@ -218,6 +233,14 @@ def main_2():
     img_array = np.clip(img_array, 0, 1)
     plt.imshow(img_array)
     plt.show()
+
+def custom_lr_adjust(optimizer, epoch, lr):
+    if epoch < 1000:
+        lr = lr * 0.1
+    
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
 
 if __name__ == '__main__':
     main_2()

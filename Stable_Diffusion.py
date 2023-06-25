@@ -11,6 +11,8 @@ import torch.nn.functional as F
 
 from torch.cuda.amp import custom_bwd, custom_fwd 
 
+import numpy as np
+
 class SpecifyGradient(torch.autograd.Function):
     @staticmethod
     @custom_fwd
@@ -166,6 +168,14 @@ class StableDiffusion(nn.Module):
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(noise_pred, t, latents)['prev_sample']
+
+                #test
+                #path = "./Experiments/Differentiable_Image_Generation/structure_noise_comparison/ancestral_sampling/"
+                #img = self.decode_latents(latents)
+                #img_array = img.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
+                #img_array = np.clip(img_array, 0, 1)
+                #plt.imsave(path + f"_{t}.png", img_array)
+
         
         return latents
 
