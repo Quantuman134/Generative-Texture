@@ -1,16 +1,5 @@
 # README.md
 
-## package
-* pytorch 2.0
-* pytorch3D 0.7.3
-* cuda 11.8
-* diffusers 0.14.0
-* huggingface-hub 0.14.2
-* matplotlib
-* tensorboard
-* tokenizers 0.13.3
-* transformers 4.28.1
-
 ## Img_Asset.py (disable)
 A **Dataset** class of pytorch to collect pixel coordinates and pixel colors of an image as the traning set. This traning set is used to train the **NeuralTextureField**
 

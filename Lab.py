@@ -9,8 +9,10 @@ import Neural_Texture_Field
 from Img_Asset import PixelDataSet
 import Img_Asset
 def main():
-    a = torch.randn((1, 3, 3))
-    print(a.size())
+    a = torch.tensor([0, 1, 2], dtype=torch.float32, requires_grad=True)
+    loss = a.sum()
+    loss.backward()
+    print(a.grad)
 
 def main_2():
     #mlp_path =  "./Assets/Image_MLP/nascar2/nth.pth"

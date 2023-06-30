@@ -15,19 +15,17 @@ import numpy as np
 # current texture sample is bilinear 
 
 class DiffTexture(nn.Module):
-    def __init__(self, size=(512, 512), n=1) -> None:
+    def __init__(self, size=(512, 512)) -> None:
         super().__init__()
         self.width = size[0]
         self.height = size[1]
-        self.layers = n
         self.set_gaussian()
         #temp test code
         self.rand_layer = False
 
     def set_gaussian(self, mean=0, sig=1):
-        self.texture = torch.nn.Parameter(torch.randn((self.layers, self.height, self.width, 3), dtype=torch.float32, device=device, requires_grad=True) * sig + mean)
+        self.texture = torch.nn.Parameter(torch.randn((self.height, self.width, 3), dtype=torch.float32, device=device, requires_grad=True) * sig + mean)
 
-    #disable temporarily (no support the current dimension of texture)
     def set_image(self, img_tensor):
         #img_tensor size: [B, C, H, W], color value [0, 1]
         B, C, H, W = img_tensor.size()
@@ -36,6 +34,7 @@ class DiffTexture(nn.Module):
         img_tensor = img_tensor.to(device)
         self.texture = torch.nn.Parameter(img_tensor.squeeze().permute(1, 2, 0))
         
+
     def forward(self, uvs):
         if uvs.dim() == 1:
             color = self.texture_sample(uvs)
@@ -54,15 +53,10 @@ class DiffTexture(nn.Module):
         v_1 = uv[1].ceil().type(torch.int32)
         a = uv[0] - u_0
         b = uv[1] - v_0
-        colors = (self.texture[:, u_0, v_0] * a + self.texture[:, u_1, v_0] * (1 - a)) * b \
-        + (self.texture[:, u_0, v_1] * a + self.texture[:, u_1, v_1] * (1 - a)) * (1 - b)
-        #temp test code
-        if self.rand_layer:
-            layer = torch.randint(0, self.layers, (1,)).item()
-            color = colors[layer, :]
-        else:
-            color = torch.sum(colors, dim=0)/self.layers
-        color = torch.clip(color, -1, 1)
+        color = (self.texture[u_0, v_0] * a + self.texture[u_1, v_0] * (1 - a)) * b \
+        + (self.texture[u_0, v_1] * a + self.texture[u_1, v_1] * (1 - a)) * (1 - b)
+
+        color = F.tanh(color)
         return color
     
     def texture_batch_sample(self, uvs):
@@ -73,19 +67,14 @@ class DiffTexture(nn.Module):
         us_1 = uvs[:, 0].ceil().type(torch.int32)
         vs_0 = uvs[:, 1].floor().type(torch.int32)
         vs_1 = uvs[:, 1].ceil().type(torch.int32)
-        a = (uvs[:, 0] - us_0).reshape(-1, 1).repeat(self.layers, 1, 3)
-        b = (uvs[:, 1] - vs_0).reshape(-1, 1).repeat(self.layers, 1, 3)
-        colors = (self.texture[:, us_0, vs_0, :] * a + self.texture[:, us_1, vs_0, :] * (1 - a)) * b \
-        + (self.texture[:, us_0, vs_1, :] * a + self.texture[:, us_1, vs_1, :] * (1 - a)) * (1 - b)
-        #temp test code
-        if self.rand_layer:
-            layer = torch.randint(0, self.layers, (1,)).item()
-            colors = colors[layer, :, :]
-        else:
-            colors = torch.sum(colors, 0)/self.layers
-        colors = torch.clip(colors, -1, 1)
-        return colors
+        a = (uvs[:, 0] - us_0).reshape(-1, 1)
+        b = (uvs[:, 1] - vs_0).reshape(-1, 1)
+        colors = (self.texture[us_0, vs_0] * a + self.texture[us_1, vs_0] * (1 - a)) * b \
+        + (self.texture[us_0, vs_1] * a + self.texture[us_1, vs_1] * (1 - a)) * (1 - b)
 
+        colors = F.tanh(colors)
+        return colors
+    
     def render_img(self, width=512, height=512):
         #output: 'torch' or 'rgb', torch: expected output range [-1, 1], rgb: expected output range [0, 1]
         #output: [N, 3, H, W]
@@ -148,7 +137,7 @@ def main_2():
 
     seed = 12145
     utils.seed_everything(seed)
-    diff_tex = DiffTexture(size=(512, 512), n=1)
+    diff_tex = DiffTexture(size=(512, 512))
     sig = 1
     diff_tex.set_gaussian(sig = sig)
     guidance = StableDiffusion(device=device)
@@ -163,15 +152,15 @@ def main_2():
     lr = 0.1
 
     #import_img_path = "./Assets/Images/Gaussian_Noise_Latent.png"
-    #import_img_path = "./test.png"
-    #img = Image.open(import_img_path)
-    #img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
-    #diff_tex.set_image(img_tensor=img_tensor)  
+    import_img_path = "./test.png"
+    img = Image.open(import_img_path)
+    img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
+    diff_tex.set_image(img_tensor=img_tensor)
 
     optimizer = torch.optim.Adam(diff_tex.parameters(), lr=lr)
     info_period: int = 50
-    image_save = False
-    save_path = "./Experiments/Differentiable_Image_Generation/structure_noise_comparison/multiple_image_layers/layers_4_rand/"
+    image_save = True
+    save_path = "./Experiments/Differentiable_Image_Generation/structure_noise_comparison/grad_image/noise_098_clear/"
     save_period: int = 50
 
     #tensorboard
@@ -184,6 +173,12 @@ def main_2():
     #temp test code
     diff_tex.rand_layer = False
     for epoch in range(epochs):
+        min_t = 0.98
+        max_t = 0.98
+        #if epoch < 500:
+        #    min_t = 0.99
+
+
         optimizer.zero_grad()
         img_pred = diff_tex.render_img()
         if image_save and (epoch+1)%save_period == 0:
