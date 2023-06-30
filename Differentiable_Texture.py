@@ -1,4 +1,3 @@
-# git test
 from typing import Iterator
 import torch
 import torch.nn as nn
