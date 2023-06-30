@@ -1,3 +1,4 @@
+# git test
 from typing import Iterator
 import torch
 import torch.nn as nn
@@ -7,9 +8,8 @@ from utils import device
 import matplotlib.pyplot as plt
 import numpy as np
 
-# size: width x height
-# n: layer of texture. 
-# output: color, ideal range is [-1, 1], the value is the average of all layers
+#size: width x height
+# output: color, ideal range is [-1, 1] 
 # input coordinate: the dimension of input coordinate is 2, and range of value is [-1, 1]. The positive direction
 # of x and y are right and up respectively
 # current texture sample is bilinear 
@@ -20,8 +20,6 @@ class DiffTexture(nn.Module):
         self.width = size[0]
         self.height = size[1]
         self.set_gaussian()
-        #temp test code
-        self.rand_layer = False
 
     def set_gaussian(self, mean=0, sig=1):
         self.texture = torch.nn.Parameter(torch.randn((self.height, self.width, 3), dtype=torch.float32, device=device, requires_grad=True) * sig + mean)
@@ -77,7 +75,6 @@ class DiffTexture(nn.Module):
     
     def render_img(self, width=512, height=512):
         #output: 'torch' or 'rgb', torch: expected output range [-1, 1], rgb: expected output range [0, 1]
-        #output: [N, 3, H, W]
         coo_tensor = torch.zeros((height, width, 2), dtype=torch.float32, device=device)
         j = torch.arange(start=0, end=height, device=device).unsqueeze(0).transpose(0, 1).repeat(1, width)
         i = torch.arange(start=0, end=height, device=device).unsqueeze(0).repeat(height, 1)
@@ -99,13 +96,8 @@ class DiffTexture(nn.Module):
         plt.imshow(img_array)
         plt.show()
     
-    def img_save(self, save_path, width=512, height=512, layer=-1):
-        if layer == -1:
-            img_tensor = self.render_img(width, height)
-        else:
-            img_tensor = self.texture[layer, :, :, :].permute(2, 0, 1).reshape(1, 3, self.height, self.width)
-            img_tensor = F.interpolate(img_tensor, (height, width))
-
+    def img_save(self, save_path, width=512, height=512):
+        img_tensor = self.render_img(width, height)
         img_array = img_tensor.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
         img_array = np.clip(img_array, 0, 1)
         plt.imsave(save_path, img_array)
@@ -135,14 +127,14 @@ def main_2():
     from PIL import Image
     from torchvision import transforms
 
-    seed = 12145
+    seed = 0
     utils.seed_everything(seed)
     diff_tex = DiffTexture(size=(512, 512))
     sig = 1
     diff_tex.set_gaussian(sig = sig)
     guidance = StableDiffusion(device=device)
-    #scaler = torch.cuda.amp.GradScaler(enabled=False)
-     
+    scaler = torch.cuda.amp.GradScaler(enabled=False)
+    
     #configuring
     text_prompt = "an orange cat head"
     text_embeddings = guidance.get_text_embeds(text_prompt, '')
@@ -169,9 +161,6 @@ def main_2():
     #training
     start_t = time.time()
     total_loss = 0
-
-    #temp test code
-    diff_tex.rand_layer = False
     for epoch in range(epochs):
         min_t = 0.98
         max_t = 0.98
@@ -188,18 +177,15 @@ def main_2():
             tensor_for_backward, p_loss = guidance.train_step(pred_rgb=img_pred, text_embeddings=text_embeddings, min_t=min_t, max_t=max_t)
 
         total_loss += p_loss
-        tensor_for_backward.backward()
-        optimizer.step()
-        torch.cuda.empty_cache()
-        #scaler.scale(tensor_for_backward).backward()
-        #scaler.step(optimizer)
+        scaler.scale(tensor_for_backward).backward()
+        scaler.step(optimizer)
         #custom_lr_adjust(optimizer, epoch, lr)
-        #scaler.update()
+        scaler.update()
 
         if (epoch+1)%info_period == 0:
             end_t = time.time()
             print(f"[INFO] epoch {epoch+1} takes {(end_t - start_t):.4f} seconds. loss = {total_loss / info_period}")
-            #print(f"learning rate = {optimizer.param_groups[0]['lr']}")
+            print(f"learning rate = {optimizer.param_groups[0]['lr']}")
             writer.add_scalar("Loss/train", total_loss / info_period, epoch)
             total_loss = 0
             start_t = end_t
@@ -241,20 +227,13 @@ def main_2():
     writer.flush()
     writer.close()
 
-    #temp test code
-    diff_tex.rand_layer = False
     #rendering
-    if image_save:
-        for layer in range(diff_tex.layers):
-            diff_tex.img_save(save_path=save_path+f'final_layer_{layer}.png', layer=layer)
-
     img_tensor = diff_tex.render_img()
     img_tensor = img_tensor.squeeze(0).permute(1, 2, 0)
     img_array = img_tensor.cpu().detach().numpy()
     img_array = np.clip(img_array, 0, 1)
     plt.imshow(img_array)
     plt.show()
-
 
 def custom_lr_adjust(optimizer, epoch, lr):
     if epoch < 1000:
