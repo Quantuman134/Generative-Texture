@@ -143,10 +143,10 @@ def main_2():
     lr = 0.1
 
     #import_img_path = "./Assets/Images/Gaussian_Noise_Latent.png"
-    import_img_path = "./test.png"
-    img = Image.open(import_img_path)
-    img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
-    diff_tex.set_image(img_tensor=img_tensor)
+    #import_img_path = "./test.png"
+    #img = Image.open(import_img_path)
+    #img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
+    #diff_tex.set_image(img_tensor=img_tensor)
 
     optimizer = torch.optim.Adam(diff_tex.parameters(), lr=lr)
     info_period: int = 50
@@ -161,11 +161,6 @@ def main_2():
     start_t = time.time()
     total_loss = 0
     for epoch in range(epochs):
-        min_t = 0.98
-        max_t = 0.98
-        #if epoch < 500:
-        #    min_t = 0.99
-
 
         optimizer.zero_grad()
         img_pred = diff_tex.render_img()
