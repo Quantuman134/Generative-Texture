@@ -94,19 +94,22 @@ class StableDiffusion(nn.Module):
         return text_embeddings
 
 
-    def train_step(self, pred_rgb, text_embeddings=None, guidance_scale=100, min_t=0.02, max_t=0.98, detailed=False):
+    def train_step(self, pred_tensor, text_embeddings=None, guidance_scale=100, min_t=0.02, max_t=0.98, detailed=False, latent_input=False):
         
         # interp to 512x512 to be fed into vae.
-
-        pred_rgb_512 = F.interpolate(pred_rgb, (512, 512), mode='bilinear', align_corners=False)
+        if latent_input:
+            latents = pred_tensor
+        else:
+            pred_rgb_512 = F.interpolate(pred_tensor, (512, 512), mode='bilinear', align_corners=False)
+            # encode image into latents with vae, requires grad!
+            latents = self.encode_imgs(pred_rgb_512)
 
         # timestep ~ U(0.02, 0.98) to avoid very high/low noise level
         self.min_step = int(self.num_train_timesteps * min_t)
         self.max_step = int(self.num_train_timesteps * max_t)
         t = torch.randint(self.min_step, self.max_step + 1, [1], dtype=torch.long, device=self.device)
 
-        # encode image into latents with vae, requires grad!
-        latents = self.encode_imgs(pred_rgb_512)
+
 
         # predict the noise residual with unet, NO grad!
         with torch.no_grad():
@@ -272,12 +275,12 @@ def main_2():
     seed = 0
     utils.seed_everything(seed)
     guidance_scale = 100
-    lr = 0.01
+    lr = 0.005
     epochs = 1000
     text_prompt = "an orange cat head"
     text_embeddings = guidance.get_text_embeds(text_prompt, '')
 
-    latents = torch.randn((1, 4, 64, 64), dtype=torch.float32, device=device, requires_grad=True)
+    latents = torch.randn((1, 4, 256, 256), dtype=torch.float32, device=device, requires_grad=True)
     latents = torch.nn.Parameter(latents)
     optimizer = torch.optim.Adam([latents], lr=lr)
 
@@ -285,12 +288,13 @@ def main_2():
 
     for epoch in range(epochs):
         optimizer.zero_grad()
+        latents_input = F.interpolate(latents, (64, 64), mode='bilinear')
         t = torch.randint(guidance.min_step, guidance.max_step + 1, [1], dtype=torch.long, device=device)
 
         with torch.no_grad():
         # add noise
-            noise = torch.randn_like(latents)
-            latents_noisy = guidance.scheduler.add_noise(latents, noise, t)
+            noise = torch.randn_like(latents_input)
+            latents_noisy = guidance.scheduler.add_noise(latents_input, noise, t)
             # pred noise
             latent_model_input = torch.cat([latents_noisy] * 2)
             noise_pred = guidance.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).sample        
@@ -311,17 +315,18 @@ def main_2():
         grad = torch.nan_to_num(grad)
 
         # since we omitted an item in grad, we need to use the custom function to specify the gradient
-        tensor_for_backward = SpecifyGradient.apply(latents, grad) 
+        tensor_for_backward = SpecifyGradient.apply(latents_input, grad) 
 
         tensor_for_backward.backward()
         optimizer.step()
         
         #info update
         if (epoch+1) % info_update_period == 0:
-            print(f"[INFO] epoch: {epoch+1}, loss = {p_loss}")
-    
+            print(f"[INFO] epoch: {epoch+1}, loss = {p_loss}")    
+
     #show result
-    img_tensor = guidance.decode_latents(latents)
+    latents_input = F.interpolate(latents, (64, 64), mode='bilinear')
+    img_tensor = guidance.decode_latents(latents_input)
     img_array = img_tensor.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
     img_array = np.clip(img_array, 0, 1)
     plt.imshow(img_array)

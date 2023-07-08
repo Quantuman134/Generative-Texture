@@ -98,32 +98,31 @@ def train_oli_sd(mlp, epochs, lr, text_prompt):
         if True:
             print(f"[INFO] epoch {epoch} takes {(end_t - start_t):.4f} seconds.")
 
-def train_tex_mlp_sd(mlp, mesh_obj, faces, aux, epochs, lr, text_prompt, save_path=None):
-    optimizer = torch.optim.Adam(mlp.parameters(), lr=lr)
+def train_diff_tex_sd(diff_tex, mesh_obj, faces, aux, epochs, lr, text_prompt, save_path=None):
+    optimizer = torch.optim.Adam(diff_tex.parameters(), lr=lr)
     guidance = StableDiffusion(device=device)
     text_embeddings = guidance.get_text_embeds(text_prompt, '')
-    scaler = torch.cuda.amp.GradScaler(enabled=False)
 
     #differentiable rendering
-    R, T = renderer.look_at_view_transform(2.3, 0, 135)
+    R, T = renderer.look_at_view_transform(2.0, 0, 0)
     camera = renderer.FoVPerspectiveCameras(R=R, T=T, device=device)
 
     #light
     light = renderer.PointLights(device=device, location=[[0.0, 10.0, 10.0]])
 
     #renderer
-    raster_setting = renderer.RasterizationSettings(image_size=512, blur_radius=0.0, faces_per_pixel=1)
+    raster_setting = renderer.RasterizationSettings(image_size=64, blur_radius=0.0, faces_per_pixel=1)
 
     mesh_renderer = renderer.MeshRenderer(
-        rasterizer=renderer.MeshRasterizer(
+        rasterizer = renderer.MeshRasterizer(
             cameras=camera,
             raster_settings=raster_setting
         ),
         shader = NeuralTextureShader(
-            tex_net=mlp,
+            diff_tex=diff_tex,
             device=device,
             cameras=camera,
-            light_enable=True,
+            light_enable=False,
             lights=light,
             faces=faces,
             aux=aux
@@ -137,31 +136,32 @@ def train_tex_mlp_sd(mlp, mesh_obj, faces, aux, epochs, lr, text_prompt, save_pa
 
     print(f"[INFO] traning starts")
     total_loss = 0
+    info_update_period = 50
+    start_t = time.time()
     for epoch in range(epochs):
-        if epoch >= 1000:
-            lr = 0.000001
-            if epoch >=10000:
-                lr = 0.0000001
-        start_t = time.time()
-
         #rendering
-        img_pred = mesh_renderer(mesh_obj)[:, :, :, 0:3]
-        if (epoch+1) % 100 == 0:
-            img_array = img_pred[0, :, :, 0:3].cpu().detach().numpy()
-            img_array = np.clip(img_array, 0, 1)
-            plt.imsave(save_path + f"/ep_{epoch+1}.png", img_array)
-
+        img_pred = mesh_renderer(mesh_obj)
+        img_pred = img_pred[:, :, :, 0:(img_pred.size()[3] - 1)]
         img_pred = img_pred.permute(0, 3, 1, 2)
         optimizer.zero_grad()
-        loss = guidance.train_step(pred_rgb=img_pred, text_embeddings=text_embeddings)
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
-        end_t = time.time()
-        if True:
-            print(f"[INFO] epoch {epoch} takes {(end_t - start_t):.4f} seconds.")
+        tensor_for_backward, p_loss = guidance.train_step(pred_tensor=img_pred, text_embeddings=text_embeddings, latent_input=True)
+        tensor_for_backward.backward()
+        optimizer.step()
+        total_loss += p_loss
+        
+        if (epoch+1) % info_update_period == 0:
+            diff_tex.img_save(save_path=(save_path + f"/ep_{epoch+1}.png"))
+            #latent space
+            img_array = utils.decode_latents(img_pred)
+            img_array = img_array[0, :, :, :].permute(1, 2, 0).cpu().detach().numpy()
+            img_array = np.clip(img_array, 0, 1)
+            plt.imsave(save_path + f"/_rendered_ep_{epoch+1}.png", img_array)
 
-
+        if (epoch+1) % info_update_period == 0:
+            end_t = time.time()
+            print(f"[INFO] epoch {epoch + 1} takes {(end_t - start_t):.4f} seconds. loss = {total_loss / info_update_period}")
+            total_loss = 0
+            start_t = end_t
 
     return img_pred
 
@@ -235,23 +235,20 @@ def main_2_2():
 
 # train a Neural_Texture_Field under specific view rendering with stable-diffusion guidance
 def main_3():
-    seed = 84462
+    seed = 0
     utils.seed_everything(seed)
-    mesh_path = "./Assets/3D_Model/Cow/cow.obj"
+    mesh_path = "./Assets/3D_Model/Square/square.obj"
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
     verts, faces, aux = io.load_obj(mesh_path, device=device)
-    #mlp_path = "./Experiments/mlp_represented_image_training _entire_image/gaussian_noise/nth.pth"
-    #tex_mlp = NeuralTextureField(width=512, depth=3, input_dim=2, pe_enable=True)
-    #tex_mlp.load_state_dict(torch.load(mlp_path))
-    tex_mlp = DiffTexture(size=(2048, 2048))
+    diff_tex = DiffTexture(size=(256, 256), is_latent=True)
 
     #training
-    epochs = 200
-    lr = 0.05
-    text_prompt = "a photo realistic cow"
-    save_path = "./Experiments/SDS_in_MLP_Represented_Texture_Specific_View/Cow_Experiment_DiffTex/cow2"
+    epochs = 1000
+    lr = 0.01
+    text_prompt = "an orange cat head"
+    save_path = "./Experiments/Generative_Texture_2/Diff_Texture_Square/latent_space_256_we"
     #text_prompt = "a cat"
-    img_pred = train_tex_mlp_sd(mlp=tex_mlp, mesh_obj=mesh_obj, faces=faces, aux=aux, epochs=epochs, lr=lr, text_prompt=text_prompt, save_path=save_path).permute(0, 2, 3, 1)
+    img_pred = train_diff_tex_sd(diff_tex=diff_tex, mesh_obj=mesh_obj, faces=faces, aux=aux, epochs=epochs, lr=lr, text_prompt=text_prompt, save_path=save_path).permute(0, 2, 3, 1)
 
     img = img_pred[0, :, :, 0:3].cpu().detach().numpy()
     plt.imshow(img)
@@ -282,6 +279,6 @@ def main_4():
 
 
 if __name__ == "__main__":
-    main_4()
+    main_3()
 
 

@@ -49,8 +49,12 @@ class DiffTexture(nn.Module):
     
     def texture_sample(self, uv):
         uv = (uv + 1)/2
-        uv[0] *= (self.width - 1)
-        uv[1] *= (self.height - 1)
+        if self.is_latent:
+            uv[0] *= (64 - 1)
+            uv[1] *= (64 - 1)
+        else:            
+            uv[0] *= (self.width - 1)
+            uv[1] *= (self.height - 1)
         u_0 = uv[0].floor().type(torch.int32)
         u_1 = uv[0].ceil().type(torch.int32)
         v_0 = uv[1].floor().type(torch.int32)
@@ -60,13 +64,17 @@ class DiffTexture(nn.Module):
         color = (self.texture[u_0, v_0] * a + self.texture[u_1, v_0] * (1 - a)) * b \
         + (self.texture[u_0, v_1] * a + self.texture[u_1, v_1] * (1 - a)) * (1 - b)
 
-        color = F.tanh(color)
+        #color = F.tanh(color)
         return color
     
     def texture_batch_sample(self, uvs):
         uvs = (uvs + 1)/2
-        uvs[:, 0] *= (self.width - 1)
-        uvs[:, 1] *= (self.height - 1)
+        if self.is_latent:
+            uvs[:, 0] *= (self.width - 1)
+            uvs[:, 1] *= (self.height - 1)
+        else:
+            uvs[:, 0] *= (self.width - 1)
+            uvs[:, 1] *= (self.height - 1)
         us_0 = uvs[:, 0].floor().type(torch.int32)
         us_1 = uvs[:, 0].ceil().type(torch.int32)
         vs_0 = uvs[:, 1].floor().type(torch.int32)
@@ -76,23 +84,27 @@ class DiffTexture(nn.Module):
         colors = (self.texture[us_0, vs_0] * a + self.texture[us_1, vs_0] * (1 - a)) * b \
         + (self.texture[us_0, vs_1] * a + self.texture[us_1, vs_1] * (1 - a)) * (1 - b)
 
-        colors = F.tanh(colors)
+        #colors = F.tanh(colors)
         return colors
     
     def render_img(self, width=512, height=512):
         #output: 'torch' or 'rgb', torch: expected output range [-1, 1], rgb: expected output range [0, 1]
         coo_tensor = torch.zeros((height, width, 2), dtype=torch.float32, device=device)
         j = torch.arange(start=0, end=height, device=device).unsqueeze(0).transpose(0, 1).repeat(1, width)
-        i = torch.arange(start=0, end=height, device=device).unsqueeze(0).repeat(height, 1)
+        i = torch.arange(start=0, end=width, device=device).unsqueeze(0).repeat(height, 1)
         x = (j * 2 + 1.0) / height - 1.0
         y = (i * 2 + 1.0) / width - 1.0
         coo_tensor[:, :, 0] = x
         coo_tensor[:, :, 1] = y
         coo_tensor = coo_tensor.reshape(-1, 2) # [H*W, 2]
-        img_tensor = (self(coo_tensor) + 1) / 2 # color rgb [0, 1]
-        img_tensor = img_tensor.reshape(width, height, img_tensor.size()[1]) # depth 3 or 4
+        if self.is_latent:
+            img_tensor = self(coo_tensor) # latent space [-1, 1]
+        else:
+            img_tensor = (self(coo_tensor) + 1) / 2 # color space [0, 1]
+        
         #img_tensor: [1, 3 or 4, H, W]
-        img_tensor = img_tensor.reshape(1, height, width, img_tensor.size()[2]).permute(0, 3, 1, 2).contiguous()
+        #img_tensor = img_tensor.reshape(1, width, height, img_tensor.size()[1]).permute(0, 3, 1, 2).contiguous() # depth 3 or 4
+        img_tensor = img_tensor.reshape(1, width, height, img_tensor.size()[1]).permute(0, 3, 1, 2)
         return img_tensor
     
     def img_show(self, width=512, height=512):
@@ -102,15 +114,20 @@ class DiffTexture(nn.Module):
         plt.imshow(img_array)
         plt.show()
     
-    def img_save(self, save_path, width=512, height=512):
-        img_tensor = self.render_img(width, height)[:, 0:3, :, :] #if latents, maintain the first 3 components
+    def img_save(self, save_path, width=512, height=512, rgb=True):
+        img_tensor = self.render_img(width, height)
+        if self.is_latent and rgb:
+            #img_tensor = F.interpolate(img_tensor, (64, 64), mode='bilinear', align_corners=False) 
+            img_tensor = self.render_img(64, 64) # pay attention to this line!!(and last line)
+            img_tensor = utils.decode_latents(img_tensor)    
+        img_tensor = img_tensor[:, 0:3, :, :] #if latents, maintain the first 3 components
         img_array = img_tensor.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
         img_array = np.clip(img_array, 0, 1)
         plt.imsave(save_path, img_array)
     
     def latent2rgb(self):
         self.is_latent = False
-        img_tensor = utils.decode_latents(self.texture.reshape(1, self.height, self.width, 4).permute(0, 3, 1, 2))
+        img_tensor = utils.decode_latents(self.texture.reshape(1, 64, 64, 4).permute(0, 3, 1, 2))
         self.texture = img_tensor.unsqueeze(0).permute(1, 2, 0)
     
 
@@ -174,12 +191,12 @@ def main_2():
     for epoch in range(epochs):
         optimizer.zero_grad()
         img_pred = diff_tex.render_img()
-        img_pred.retain_grad()
+        
         if image_save and (epoch+1)%save_period == 0:
             tensor_for_backward, p_loss, latents, noise_rgb, img_noisy_rgb, noise_pred_rgb, img_denoised_rgb, pred_diff_rgb, t\
-              = guidance.train_step(pred_rgb=img_pred, text_embeddings=text_embeddings, min_t=min_t, max_t=max_t, detailed=True)
+              = guidance.train_step(pred_tensor=img_pred, text_embeddings=text_embeddings, min_t=min_t, max_t=max_t, detailed=True)
         else:
-            tensor_for_backward, p_loss = guidance.train_step(pred_rgb=img_pred, text_embeddings=text_embeddings, min_t=min_t, max_t=max_t)
+            tensor_for_backward, p_loss = guidance.train_step(pred_tensor=img_pred, text_embeddings=text_embeddings, min_t=min_t, max_t=max_t)
 
         total_loss += p_loss
         tensor_for_backward.backward()
@@ -270,18 +287,12 @@ def main_3():
     min_t = 0.02
     max_t = 0.98
     epochs = 1000
-    lr = 0.1
-
-    #import_img_path = "./Assets/Images/Gaussian_Noise_Latent.png"
-    #import_img_path = "./test.png"
-    #img = Image.open(import_img_path)
-    #img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :]
-    #diff_tex.set_image(img_tensor=img_tensor)
+    lr = 0.01
 
     optimizer = torch.optim.Adam(diff_tex.parameters(), lr=lr)
     info_period: int = 50
     image_save = True
-    save_path = "./Experiments/Differentiable_Image_Generation/structure_noise_comparison/latent_image/"
+    save_path = "./Experiments/Differentiable_Image_Generation/structure_noise_comparison/latent_image/test_256/"
     save_period: int = 50
 
     #tensorboard
@@ -292,21 +303,20 @@ def main_3():
     total_loss = 0
     for epoch in range(epochs):
         optimizer.zero_grad()
-        img_pred = diff_tex.render_img()
-        img_pred.retain_grad()
+        img_pred = diff_tex.render_img(64, 64)
+        #img_pred = F.interpolate(img_pred, (64, 64), mode='bilinear', align_corners=False)
+        #img_pred = diff_tex.texture.reshape([1, 64, 64, 4]).permute(0, 3, 1, 2)
+        #img_pred = F.interpolate(img_pred, (64, 64), mode='bilinear', align_corners=False)
+
         if image_save and (epoch+1)%save_period == 0:
             tensor_for_backward, p_loss, latents, noise_rgb, img_noisy_rgb, noise_pred_rgb, img_denoised_rgb, pred_diff_rgb, t\
-              = guidance.train_step(pred_rgb=img_pred, text_embeddings=text_embeddings, min_t=min_t, max_t=max_t, detailed=True)
+              = guidance.train_step(pred_tensor=img_pred, text_embeddings=text_embeddings, min_t=min_t, max_t=max_t, detailed=True, latent_input=True)
         else:
-            tensor_for_backward, p_loss = guidance.train_step(pred_rgb=img_pred, text_embeddings=text_embeddings, min_t=min_t, max_t=max_t)
+            tensor_for_backward, p_loss = guidance.train_step(pred_tensor=img_pred, text_embeddings=text_embeddings, min_t=min_t, max_t=max_t, latent_input=True)
 
         total_loss += p_loss
         tensor_for_backward.backward()
         optimizer.step()
-        #scaler.scale(tensor_for_backward).backward()
-        #scaler.step(optimizer)
-        #custom_lr_adjust(optimizer, epoch, lr)
-        #scaler.update()
 
         if (epoch+1)%info_period == 0:
             end_t = time.time()
@@ -370,4 +380,4 @@ def main_3():
     plt.show()
 
 if __name__ == '__main__':
-    main_2()
+    main_3()

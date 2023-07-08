@@ -88,6 +88,7 @@ class TextureGenerator:
                 img_array = np.clip(img_array, 0, 1)
                 plt.imsave(save_path + f"/results_{i}.png", img_array)
 
+    #temprarily disable
     def tex_net_save(self, save_path):
         self.tex_net.net_save(save_path)
 

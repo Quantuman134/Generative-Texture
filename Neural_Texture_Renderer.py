@@ -10,14 +10,14 @@ class NeuralTextureRenderer:
         self.light_setting()
 
     # rendered image: tensor[N, H, W, 4], N: image number, 4: RGBA
-    def rendering(self, mesh_data, tex_net):
+    def rendering(self, mesh_data, diff_tex):
         mesh_renderer = renderer.MeshRenderer(
             rasterizer=renderer.MeshRasterizer(
                 cameras=self.cameras,
                 raster_settings=self.raster_setting
             ),
             shader=NeuralTextureShader(
-                tex_net=tex_net,
+                diff_tex=diff_tex,
                 device=self.device,
                 cameras=self.cameras,
                 light_enable=True,
@@ -58,14 +58,16 @@ def main():
     import numpy as np
 
     renderer = NeuralTextureRenderer()
-    mesh_path = "./Assets/3D_Model/Cow/cow.obj"
+    mesh_path = "./Assets/3D_Model/Square/square.obj"
     mlp_path = "./Assets/Image_MLP/gaussian_noise/nth.pt"
-    tex_net = torch.jit.load(mlp_path)
+    diff_tex = torch.jit.load(mlp_path)
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
     _, faces, aux = io.load_obj(mesh_path, device=device)
     mesh_data = {'mesh_obj': mesh_obj, 'faces': faces, 'aux': aux}
 
-    image_tensor = renderer.rendering(mesh_data=mesh_data, tex_net=tex_net)
+    renderer.camera_setting(dist=1.6, elev=0, azim=0)
+    renderer.rasterization_setting(image_size=64)
+    image_tensor = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex)
     image_array = image_tensor[0, :, :, 0:3].cpu().detach().numpy()
     image_array = np.clip(image_array, 0, 1)
     plt.imshow(image_array)
