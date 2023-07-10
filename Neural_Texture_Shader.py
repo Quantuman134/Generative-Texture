@@ -58,7 +58,7 @@ class NeuralTextureShader(shader.ShaderBase):
                 texels=texels,
                 lights=lights,
                 cameras=cameras,
-                materials=materials,
+                materials=materials
             )
         else:
             colors = texels # no lighting
@@ -147,15 +147,17 @@ class NeuralTextureShader(shader.ShaderBase):
         texels = colors.reshape(N, H, W, K, 3)
         return texels
 
-    def texture_sample(self, fragments: Fragments):
+    def texture_sample(self, fragments: Fragments, nearest=False):
         N, H, W, K = fragments.pix_to_face.size()
         packing_list = [
             i[j] for i, j in zip([self.aux.verts_uvs.to(self.device)], [self.faces.textures_idx.to(self.device)])
         ]
         faces_verts_uvs = torch.cat(packing_list)
-        pixel_uvs = interpolate_face_attributes(
-            fragments.pix_to_face, fragments.bary_coords, faces_verts_uvs
-        ).reshape(-1, 2) #range [0, 1]
+
+        #ave_bary_coords = torch.ones_like(fragments.bary_coords) * (1.0/3)
+        pixel_uvs = interpolate_face_attributes(fragments.pix_to_face, fragments.bary_coords, faces_verts_uvs).reshape(-1, 2) #range [0, 1]
+        #pixel_uvs = interpolate_face_attributes(fragments.pix_to_face, ave_bary_coords, faces_verts_uvs).reshape(-1, 2) #range [0, 1]
+
         pixel_uvs = pixel_uvs * 2.0 - 1.0 #range [-1, 1]
         temps = pixel_uvs[:, 0].clone()
         pixel_uvs[:, 0] = -pixel_uvs[:, 1]
@@ -167,7 +169,7 @@ class NeuralTextureShader(shader.ShaderBase):
         #print(colors[256, 256, :])
         texels = colors.unsqueeze(3).repeat(1, 1, 1, K, 1)
         return texels 
-    
+
     def verts_uvs_list(self):
         if self._verts_uvs_list is None:
             if self.isempty():

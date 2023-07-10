@@ -81,8 +81,12 @@ class DiffTexture(nn.Module):
         vs_1 = uvs[:, 1].ceil().type(torch.int32)
         a = (uvs[:, 0] - us_0).reshape(-1, 1)
         b = (uvs[:, 1] - vs_0).reshape(-1, 1)
-        colors = (self.texture[us_0, vs_0] * a + self.texture[us_1, vs_0] * (1 - a)) * b \
-        + (self.texture[us_0, vs_1] * a + self.texture[us_1, vs_1] * (1 - a)) * (1 - b)
+        #colors = (self.texture[us_0, vs_0] * a + self.texture[us_1, vs_0] * (1 - a)) * b \
+        #+ (self.texture[us_0, vs_1] * a + self.texture[us_1, vs_1] * (1 - a)) * (1 - b)
+        
+        #average
+        colors = (self.texture[us_0, vs_0] * 0.5 + self.texture[us_1, vs_0] * 0.5) * 0.5 \
+        + (self.texture[us_0, vs_1] * 0.5 + self.texture[us_1, vs_1] * 0.5) * 0.5
 
         #colors = F.tanh(colors)
         return colors
@@ -124,7 +128,14 @@ class DiffTexture(nn.Module):
         img_array = img_tensor.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
         img_array = np.clip(img_array, 0, 1)
         plt.imsave(save_path, img_array)
+
+    def tex_save(self, save_path):
+        #format of saved object is .pth
+        torch.save(self.state_dict(), save_path)
     
+    def tex_load(self, tex_path):
+        self.load_state_dict(torch.load(tex_path))
+
     def latent2rgb(self):
         self.is_latent = False
         img_tensor = utils.decode_latents(self.texture.reshape(1, 64, 64, 4).permute(0, 3, 1, 2))

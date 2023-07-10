@@ -104,7 +104,7 @@ def train_diff_tex_sd(diff_tex, mesh_obj, faces, aux, epochs, lr, text_prompt, s
     text_embeddings = guidance.get_text_embeds(text_prompt, '')
 
     #differentiable rendering
-    R, T = renderer.look_at_view_transform(2.0, 0, 0)
+    R, T = renderer.look_at_view_transform(1.6, 0, 0)
     camera = renderer.FoVPerspectiveCameras(R=R, T=T, device=device)
 
     #light
@@ -141,7 +141,7 @@ def train_diff_tex_sd(diff_tex, mesh_obj, faces, aux, epochs, lr, text_prompt, s
     for epoch in range(epochs):
         #rendering
         img_pred = mesh_renderer(mesh_obj)
-        img_pred = img_pred[:, :, :, 0:(img_pred.size()[3] - 1)]
+        img_pred = img_pred[:, :, :, 0:-1]
         img_pred = img_pred.permute(0, 3, 1, 2)
         optimizer.zero_grad()
         tensor_for_backward, p_loss = guidance.train_step(pred_tensor=img_pred, text_embeddings=text_embeddings, latent_input=True)
@@ -240,18 +240,22 @@ def main_3():
     mesh_path = "./Assets/3D_Model/Square/square.obj"
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
     verts, faces, aux = io.load_obj(mesh_path, device=device)
-    diff_tex = DiffTexture(size=(256, 256), is_latent=True)
+    diff_tex = DiffTexture(size=(64,64), is_latent=True)
 
     #training
     epochs = 1000
     lr = 0.01
     text_prompt = "an orange cat head"
-    save_path = "./Experiments/Generative_Texture_2/Diff_Texture_Square/latent_space_256_we"
+    save_path = "./Experiments/Generative_Texture_2/Diff_Texture_Square/latent_space_64"
     #text_prompt = "a cat"
     img_pred = train_diff_tex_sd(diff_tex=diff_tex, mesh_obj=mesh_obj, faces=faces, aux=aux, epochs=epochs, lr=lr, text_prompt=text_prompt, save_path=save_path).permute(0, 2, 3, 1)
 
     img = img_pred[0, :, :, 0:3].cpu().detach().numpy()
-    plt.imshow(img)
+
+    tex_save_path = "./Experiments/Generative_Texture_2/Diff_Texture_Square/latent_space_64/tex.pth"
+    diff_tex.tex_save(tex_save_path)
+    #plt.imshow(img)
+    plt.imshow(diff_tex.texture[:, :, 0:3].cpu().detach().numpy())
     plt.show()
 
     #plt.imsave(save_path + f"ep_{epochs}_3.png", img_array)    
