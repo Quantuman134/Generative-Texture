@@ -24,7 +24,7 @@ class PositionEncoding(nn.Module):
         
 ################################
 # mlp representing a texture image
-# output: color, ideal range is [-1, 1] 
+# output: color, ideal range is [0, 1] 
 # input coordinate: the dimension of input coordinate is 2, and range of value is [-1, 1]. The positive direction
 # of x and y are right and up respectively  
 class NeuralTextureField(nn.Module):
@@ -62,8 +62,7 @@ class NeuralTextureField(nn.Module):
             x = layer(x)
         colors = x
 
-        #tanh clamp
-        #colors = F.tanh(colors)
+        colors = torch.clamp(colors, 0, 1)
         return colors
     
     def render_img(self, width=512, height=512, disturb=False):

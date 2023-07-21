@@ -83,16 +83,12 @@
 2. diffusers=0.14.0
 
 ## TODOLIST
-1. pytorch program with a MLP
-    1. ~~how to use cuda correctly in pytorch~~
-    2. color output clamp
-    3. ~~512x512 img and that shall require position encoding~~
-    4. improve the image renderer efficiency
-    5. infinite resolution
-2. The environment conflictions are too many, maybe reconstruct an conda environment
+1. merge the branch of latent texture and the master branch, then clear the current code
+2. clear the theory of current pipeline, and get some insight
+3. trial some diffusion model programs, hack the DM, and understand the tricks inside it.
 
 ## TODOLIST_NEXT_WEEK
-1. try recreating an conda environment
-2. create a custom method to load mlp texture in pytorch3d
+1. 
+2. 
 3. 
 

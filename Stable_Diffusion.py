@@ -94,19 +94,22 @@ class StableDiffusion(nn.Module):
         return text_embeddings
 
 
-    def train_step(self, pred_rgb, text_embeddings=None, guidance_scale=100, min_t=0.02, max_t=0.98, detailed=False):
+    def train_step(self, pred_tensor, text_embeddings=None, guidance_scale=100, min_t=0.02, max_t=0.98, detailed=False, latent_input=False):
         
         # interp to 512x512 to be fed into vae.
-
-        pred_rgb_512 = F.interpolate(pred_rgb, (512, 512), mode='bilinear', align_corners=False)
+        if latent_input:
+            latents = pred_tensor
+        else:
+            pred_rgb_512 = F.interpolate(pred_tensor, (512, 512), mode='bilinear', align_corners=False)
+            # encode image into latents with vae, requires grad!
+            latents = self.encode_imgs(pred_rgb_512)
 
         # timestep ~ U(0.02, 0.98) to avoid very high/low noise level
         self.min_step = int(self.num_train_timesteps * min_t)
         self.max_step = int(self.num_train_timesteps * max_t)
         t = torch.randint(self.min_step, self.max_step + 1, [1], dtype=torch.long, device=self.device)
 
-        # encode image into latents with vae, requires grad!
-        latents = self.encode_imgs(pred_rgb_512)
+
 
         # predict the noise residual with unet, NO grad!
         with torch.no_grad():
@@ -140,7 +143,7 @@ class StableDiffusion(nn.Module):
         if detailed:
             self.scheduler.set_timesteps(self.num_train_timesteps)
 
-            return tensor_for_backward, p_loss, self.decode_latents(noise), \
+            return tensor_for_backward, p_loss, latents, self.decode_latents(noise), \
             self.decode_latents(latents_noisy), self.decode_latents(noise_pred), \
             self.decode_latents(self.scheduler.step(noise_pred, t, latents)['prev_sample']), \
             self.decode_latents(noise_pred - noise), t
@@ -194,7 +197,6 @@ class StableDiffusion(nn.Module):
         # imgs: [B, 3, H, W]
 
         imgs = 2 * imgs - 1
-
         posterior = self.vae.encode(imgs).latent_dist
         latents = posterior.sample() * 0.18215
 
@@ -223,9 +225,7 @@ class StableDiffusion(nn.Module):
 
         return imgs
 
-
-if __name__ == '__main__':
-
+def main():
     import argparse
     import matplotlib.pyplot as plt
     from PIL import Image
@@ -264,4 +264,73 @@ if __name__ == '__main__':
     plt.imshow(imgs[0])
     plt.show()
 
+#update img using SDS in latent space
+def main_2():
+    from utils import device
+    import utils
+    from Stable_Diffusion import StableDiffusion, SpecifyGradient
+    import matplotlib.pyplot as plt
 
+    guidance = StableDiffusion(device=device)
+    seed = 0
+    utils.seed_everything(seed)
+    guidance_scale = 100
+    lr = 0.005
+    epochs = 1000
+    text_prompt = "an orange cat head"
+    text_embeddings = guidance.get_text_embeds(text_prompt, '')
+
+    latents = torch.randn((1, 4, 256, 256), dtype=torch.float32, device=device, requires_grad=True)
+    latents = torch.nn.Parameter(latents)
+    optimizer = torch.optim.Adam([latents], lr=lr)
+
+    info_update_period = 50
+
+    for epoch in range(epochs):
+        optimizer.zero_grad()
+        latents_input = F.interpolate(latents, (64, 64), mode='bilinear')
+        t = torch.randint(guidance.min_step, guidance.max_step + 1, [1], dtype=torch.long, device=device)
+
+        with torch.no_grad():
+        # add noise
+            noise = torch.randn_like(latents_input)
+            latents_noisy = guidance.scheduler.add_noise(latents_input, noise, t)
+            # pred noise
+            latent_model_input = torch.cat([latents_noisy] * 2)
+            noise_pred = guidance.unet(latent_model_input, t, encoder_hidden_states=text_embeddings).sample        
+
+        # perform guidance (high scale from paper!)
+        noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
+        noise_pred = noise_pred_text + guidance_scale * (noise_pred_text - noise_pred_uncond)
+
+        # w(t), sigma_t^2
+        w = (1 - guidance.alphas[t])
+        grad = w * (noise_pred - noise)
+        
+        #peseudo-loss
+        p_loss = torch.sqrt(torch.mean(torch.pow((noise_pred - noise), 2))).item()
+
+        # clip grad for stable training?
+        # grad = grad.clamp(-10, 10)
+        grad = torch.nan_to_num(grad)
+
+        # since we omitted an item in grad, we need to use the custom function to specify the gradient
+        tensor_for_backward = SpecifyGradient.apply(latents_input, grad) 
+
+        tensor_for_backward.backward()
+        optimizer.step()
+        
+        #info update
+        if (epoch+1) % info_update_period == 0:
+            print(f"[INFO] epoch: {epoch+1}, loss = {p_loss}")    
+
+    #show result
+    latents_input = F.interpolate(latents, (64, 64), mode='bilinear')
+    img_tensor = guidance.decode_latents(latents_input)
+    img_array = img_tensor.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
+    img_array = np.clip(img_array, 0, 1)
+    plt.imshow(img_array)
+    plt.show()
+
+if __name__ == '__main__':
+    main_2()
