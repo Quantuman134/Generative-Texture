@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 #size: width x height
-# output: color, ideal range is [-1, 1] 
+# output: color, ideal range is [-1, 1], latent, range is [-1, 1]
 # input coordinate: the dimension of input coordinate is 2, and range of value is [-1, 1]. The positive direction
 # of x and y are right and up respectively
 # current texture sample is bilinear 
@@ -81,12 +81,12 @@ class DiffTexture(nn.Module):
         vs_1 = uvs[:, 1].ceil().type(torch.int32)
         a = (uvs[:, 0] - us_0).reshape(-1, 1)
         b = (uvs[:, 1] - vs_0).reshape(-1, 1)
-        #colors = (self.texture[us_0, vs_0] * a + self.texture[us_1, vs_0] * (1 - a)) * b \
-        #+ (self.texture[us_0, vs_1] * a + self.texture[us_1, vs_1] * (1 - a)) * (1 - b)
+        colors = (self.texture[us_0, vs_0] * a + self.texture[us_1, vs_0] * (1 - a)) * b \
+        + (self.texture[us_0, vs_1] * a + self.texture[us_1, vs_1] * (1 - a)) * (1 - b)
         
         #average
-        colors = (self.texture[us_0, vs_0] * 0.5 + self.texture[us_1, vs_0] * 0.5) * 0.5 \
-        + (self.texture[us_0, vs_1] * 0.5 + self.texture[us_1, vs_1] * 0.5) * 0.5
+        #colors = (self.texture[us_0, vs_0] * 0.5 + self.texture[us_1, vs_0] * 0.5) * 0.5 \
+        #+ (self.texture[us_0, vs_1] * 0.5 + self.texture[us_1, vs_1] * 0.5) * 0.5
 
         #colors = F.tanh(colors)
         return colors
@@ -122,7 +122,7 @@ class DiffTexture(nn.Module):
         img_tensor = self.render_img(width, height)
         if self.is_latent and rgb:
             #img_tensor = F.interpolate(img_tensor, (64, 64), mode='bilinear', align_corners=False) 
-            img_tensor = self.render_img(64, 64) # pay attention to this line!!(and last line)
+            img_tensor = self.render_img(width=self.width, height=self.height) # pay attention to this line!!(and last line)
             img_tensor = utils.decode_latents(img_tensor)    
         img_tensor = img_tensor[:, 0:3, :, :] #if latents, maintain the first 3 components
         img_array = img_tensor.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()

@@ -25,7 +25,8 @@ class NeuralTextureShader(shader.ShaderBase):
         blend_params: Optional[BlendParams] = None,
         mesh: Meshes = None,
         aux = None,
-        faces = None
+        faces = None,
+        rand_back = False
         ):
         super().__init__(device, cameras, lights, materials, blend_params)
         self.diff_tex = diff_tex
@@ -33,6 +34,7 @@ class NeuralTextureShader(shader.ShaderBase):
         self.aux = aux
         self.faces = faces
         self.light_enable = light_enable
+        self.rand_back = rand_back
 
     def forward(self, fragments: Fragments, meshes: Meshes, **kwargs) -> torch.Tensor:
         cameras = super()._get_cameras(**kwargs)
@@ -51,15 +53,29 @@ class NeuralTextureShader(shader.ShaderBase):
         lights = kwargs.get("lights", self.lights)
         materials = kwargs.get("materials", self.materials)
         blend_params = kwargs.get("blend_params", self.blend_params)
+        #print(texels.size())
         if self.light_enable:
-            colors = shader.phong_shading(
+            #temp code, because the embedded phong_shading does not support 4 dimension color...
+            colors1 = shader.phong_shading(
                 meshes=meshes,
                 fragments=fragments,
-                texels=texels,
+                texels=texels[:, :, :, :, 0:3],
                 lights=lights,
                 cameras=cameras,
                 materials=materials
             )
+            
+            colors2 = shader.phong_shading(
+                meshes=meshes,
+                fragments=fragments,
+                texels=texels[:, :, :, :,1:4],
+                lights=lights,
+                cameras=cameras,
+                materials=materials
+            )
+            colors = torch.ones_like(texels)
+            colors[:, :, :, :, 0:3] = colors1[:, :, :, :, 0:3]
+            colors[:, :, :, :, 3] = colors2[:, :, :, :, 2]
         else:
             colors = texels # no lighting
         znear = kwargs.get("znear", getattr(cameras, "znear", 1.0))
@@ -201,7 +217,7 @@ class NeuralTextureShader(shader.ShaderBase):
         fragments,
         blend_params: BlendParams,
         znear: Union[float, torch.Tensor] = 1.0,
-        zfar: Union[float, torch.Tensor] = 100,
+        zfar: Union[float, torch.Tensor] = 100
     ) -> torch.Tensor:
         """
         RGB and alpha channel blending to return an RGBA image based on the method
@@ -244,8 +260,10 @@ class NeuralTextureShader(shader.ShaderBase):
         D = (colors.size()[4] + 1) #pixel buffer depth
         pixel_colors = torch.ones((N, H, W, D), dtype=colors.dtype, device=colors.device)
         #pixel_colors = torch.ones((N, H, W, 4), dtype=colors.dtype, device=colors.device)
-        background_color = torch.ones(D-1, dtype=colors.dtype, device=colors.device)
-        #background_color = torch.tensor([1.0, 1.0, 1.0], dtype=colors.dtype, device=colors.device)
+        background_color = torch.ones(D-1, dtype=colors.dtype, device=colors.device) * 0.6
+        if self.rand_back:
+            background_color =  torch.rand(D-1, dtype=colors.dtype, device=colors.device) * 2 - 1#random background color
+
         #background_color = _get_background_color(blend_params, fragments.pix_to_face.device)
 
         # Weight for background color

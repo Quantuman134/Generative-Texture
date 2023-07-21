@@ -11,17 +11,20 @@ import Img_Asset
 import utils
 
 def main():
-    latent = torch.ones((1, 4, 64, 64), device=device)
-    latent[:, :, 0:31, 0:31] = 0
+    latent = torch.ones((1, 4, 128, 128), device=device)
+    latent[:, :, 0:64, 0:64] = 0
     image_tensor = utils.decode_latents(latent)
     image_array = image_tensor[0, :, :, :].permute(1, 2, 0).cpu().numpy()
     plt.imshow(image_array)
     plt.show()
 def main_2():
-    #mlp_path =  "./Assets/Image_MLP/nascar2/nth.pth"
-    mlp_path =  "./nth.pth"
-    tex_net = torch.load(mlp_path)
-
+    a = torch.tensor([1, 2, 3, 4, 5, 6])
+    b = a
+    print(a)
+    print(b)
+    b[3] = 0
+    print(a)
+    print(b)
 
 if __name__ == "__main__":
-    main()
+    main_2()

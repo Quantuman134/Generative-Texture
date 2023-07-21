@@ -23,17 +23,15 @@ class TextureGenerator:
         self.is_latent=is_latent
     
     def texture_train(self, text_prompt, lr, epochs, save_path=None):
-        optimizer = torch.optim.Adam(self.diff_tex.parameters(), lr=lr)
-        guidance = StableDiffusion(device=self.device)
-        text_embeddings = guidance.get_text_embeds(text_prompt, '')
-
         if self.is_latent:
             self.renderer.rasterization_setting(image_size=64)
         
+        offset = torch.tensor([[0, -0.25, 0]])
+
         #save initial data
         if save_path is not None:
             self.diff_tex.img_save(save_path=save_path + f"/tex_initial.png")
-            img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, light_enable=False, dist=2.0)
+            img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, offset=offset, light_enable=False, dist=1.3)
             i = 0
             for img_tensor in img_tensor_list:
                 i += 1
@@ -46,13 +44,17 @@ class TextureGenerator:
                 img_array = np.clip(img_array, 0, 1)
                 plt.imsave(save_path + f"/initial_{i}.png", img_array)
             del img_tensor_list
-                
+        
+        optimizer = torch.optim.Adam(self.diff_tex.parameters(), lr=lr)
+        guidance = StableDiffusion(device=self.device)
+        text_embeddings = guidance.get_text_embeds(text_prompt, '')
+
         #range of camera position
         dist_range = [2.0, 2.5]
         elev_range = [0.0, 360.0]
         azim_range = [0.0, 360.0]
 
-        info_update_period = 500
+        info_update_period = 2000
 
         print(f"[INFO] traning starts")
         start_t = time.time()
@@ -62,16 +64,16 @@ class TextureGenerator:
 
             optimizer.zero_grad()
 
-            #rand = torch.rand(3)
-            rand = torch.randint(0, 7, size=(2, ))
-            dist = 2.0
-            elev = 45 * rand[0]
-            azim = 45 * rand[1]
+            rand = torch.rand(3)
+            #rand = torch.randint(0, 8, size=(2, ))
+            dist = 1.3
+            #elev = 45
+            #azim = 45 * rand[1]
             #dist = rand[0] * (dist_range[1] - dist_range[0]) + dist_range[0]
-            #elev = rand[1] * (elev_range[1] - elev_range[0]) + elev_range[0]
-            #azim = rand[2] * (azim_range[1] - azim_range[0]) + azim_range[0]
-            self.renderer.camera_setting(dist=dist, elev=elev, azim=azim)
-            pred_tensor = self.renderer.rendering(self.mesh_data, self.diff_tex, light_enable=False)[:, :, :, 0:-1]
+            elev = rand[1] * (elev_range[1] - elev_range[0]) + elev_range[0]
+            azim = rand[2] * (azim_range[1] - azim_range[0]) + azim_range[0]
+            self.renderer.camera_setting(dist=dist, elev=elev, azim=azim, offset=offset)
+            pred_tensor = self.renderer.rendering(self.mesh_data, self.diff_tex, light_enable=False, rand_back=True)[:, :, :, 0:-1]
 
             # save mediate results
             if (save_path is not None) and ((epoch+1) % info_update_period == 0):
@@ -105,7 +107,7 @@ class TextureGenerator:
         
         if save_path is not None:
             self.diff_tex.img_save(save_path=save_path + f"/tex_result.png")
-            img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, light_enable=False, dist=2.0)
+            img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, offset=offset, light_enable=False, dist=1.3)
             i = 0
             for img_tensor in img_tensor_list:
                 i += 1
@@ -126,14 +128,14 @@ def main():
     import numpy as np
     import matplotlib.pyplot as plt
 
-    mesh_path = "./Assets/3D_Model/Cow/cow.obj"
-    text_prompt = "a black and white cow"
-    save_path = "./Experiments/Generative_Texture_2/Diff_Texture_Around/fixed_multi_angles_128"
+    mesh_path = "./Assets/3D_Model/Nascar/mesh.obj"
+    text_prompt = "a next gen of nascar"
+    save_path = "./Experiments/Generative_Texture_2/Diff_Texture_Around/nascar_128_2"
     #mlp_path = "./Assets/Image_MLP/gaussian_noise/nth.pt"
     #tex_net = torch.jit.load(mlp_path)
     diff_tex = DiffTexture(size=(128, 128), is_latent=True)
     texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=diff_tex, is_latent=True)
-    texture_generator.texture_train(text_prompt=text_prompt, lr=0.01, epochs=15000, save_path=save_path)
+    texture_generator.texture_train(text_prompt=text_prompt, lr=0.005, epochs=300000, save_path=save_path)
 
 
 if __name__ == "__main__":
