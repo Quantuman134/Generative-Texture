@@ -4,10 +4,11 @@ from Neural_Texture_Shader import NeuralTextureShader
 import torch
 
 class NeuralTextureRenderer:
-    def __init__(self) -> None:
+    def __init__(self, offset=[0.0, 0.0, 0.0]) -> None:
         self.device = device
+        self.offset = torch.tensor([offset]) #to center of object
         self.rasterization_setting()
-        self.camera_setting()
+        self.camera_setting(offset=self.offset)
         self.light_setting()
 
     # rendered image: tensor[N, H, W, 4], N: image number, 4: RGBA

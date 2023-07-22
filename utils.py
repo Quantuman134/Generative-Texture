@@ -19,7 +19,7 @@ def seed_everything(seed=0):
 
 vae = AutoencoderKL.from_pretrained("stabilityai/stable-diffusion-2-1-base", subfolder="vae").to(device)
 
-# output imgs size [B, C, H, W]
+# output imgs size [B, C, 8H, 8W], output range [0, 1]
 def decode_latents(latents):
     B, C, H, W = latents.size()
     rows = int(H/64)
@@ -29,9 +29,6 @@ def decode_latents(latents):
     latents = torch.cat(latents, dim=3)
     latents = latents.chunk(rows*cols, dim=3)
     latents = torch.cat(latents, dim=0)
-
-    #latents = latents[2, :, :, :].reshape(1, 4, 64, 64)
-    #print(latents[0,:,1,0])
 
     latents = 1 / 0.18215 * latents
 
@@ -45,3 +42,26 @@ def decode_latents(latents):
     imgs = torch.cat(imgs, dim=2)
         
     return imgs
+
+# input range [0, 1], output latent size [B, C, H/8, W/8], output range [-1, 1]
+def encode_latents(imgs):
+    B, C, H, W = imgs.size()
+    rows = int(H/512)
+    cols = int(W/512)
+    imgs = 2 * imgs - 1
+
+    imgs = imgs.chunk(rows, dim=2)
+    imgs = torch.cat(imgs, dim=3)
+    imgs = imgs.chunk(rows*cols, dim=3)
+    imgs = torch.cat(imgs, dim=0)
+
+    posterior = vae.encode(imgs).latent_dist
+    latents = posterior.sample() * 0.18215
+
+    latents = latents.chunk(rows*cols, dim=0)
+    latents = torch.cat(latents, dim=3)
+    latents = latents.chunk(rows, dim=3)
+    latents = torch.cat(latents, dim=2)
+
+    return latents
+
