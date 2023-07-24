@@ -71,26 +71,19 @@ def main():
     diff_tex = DiffTexture(size=(1024, 1024), is_latent=False)
     image = Image.open(image_path)
     image_tensor = transforms.ToTensor()(image).unsqueeze(0)
+    print(image_tensor.size())
     diff_tex.set_image(image_tensor)
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
-
-    verts_packed = mesh_obj.verts_packed()
-
-    verts_max = verts_packed.max(dim=0).values
-    verts_min = verts_packed.min(dim=0).values
-    max_length = (verts_max - verts_min).max().item()
-    center = (verts_max + verts_min)/2
-    print(max_length)
-    print(center)
-
+    #verts_packed = mesh_obj.verts_packed()
+    #verts_packed *= 0.5
     verts_list = mesh_obj.verts_list()
     for verts_obj in verts_list:
-        verts_obj = verts_obj/max_length *0.1
+        verts_obj *= 0.5
 
     _, faces, aux = io.load_obj(mesh_path, device=device)
     mesh_data = {'mesh_obj': mesh_obj, 'faces': faces, 'aux': aux}
 
-    offset = -center.cpu()
+    offset = torch.tensor([[0, -0.25, 0]])
     renderer.camera_setting(dist=1.3, elev=45, azim=90, offset=offset)
     renderer.rasterization_setting(image_size=512)
     image_tensor = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex, light_enable=True)
