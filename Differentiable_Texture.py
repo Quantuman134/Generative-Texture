@@ -95,7 +95,7 @@ class DiffTexture(nn.Module):
         return colors
     
     def render_img(self, height=512, width=512):
-        #output: 'torch' or 'rgb', torch: expected output range [-1, 1], rgb: expected output range [0, 1]
+        #output: 'latent' or 'rgb', latent: expected output range [-1, 1], rgb: expected output range [0, 1]
         coo_tensor = torch.zeros((height, width, 2), dtype=torch.float32, device=device)
         j = torch.arange(start=0, end=height, device=device).unsqueeze(0).transpose(0, 1).repeat(1, width)
         i = torch.arange(start=0, end=width, device=device).unsqueeze(0).repeat(height, 1)

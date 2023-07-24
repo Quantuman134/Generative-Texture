@@ -130,10 +130,10 @@ def main():
     save_path = "./Experiments/Generative_Texture_2/Diff_Texture_Around/temp_test"
     #mlp_path = "./Assets/Image_MLP/gaussian_noise/nth.pt"
     #tex_net = torch.jit.load(mlp_path)
-    diff_tex = DiffTexture(size=(128, 128), is_latent=True)
+    diff_tex = DiffTexture(size=(256, 256), is_latent=True)
     texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=diff_tex, is_latent=True)
-    texture_generator.texture_train(text_prompt=text_prompt, lr=0.01, epochs=1000, save_path=save_path, 
-                                    offset=[0, -0.25, 0.0], dist_range=[1.3, 1.3])
+    texture_generator.texture_train(text_prompt=text_prompt, lr=0.01, epochs=5000, save_path=save_path, 
+                                    offset=[0, -0.25, 0.0], dist_range=[0.5, 1.2], elev_range=[0.0, 0.0], azim_range=[80.0, 100.0])
 
 
 if __name__ == "__main__":
