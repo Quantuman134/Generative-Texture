@@ -139,8 +139,8 @@ def main():
     height = 512
     width = 512
     
-    img_path = "./Assets/Images/cat.jpg"
-    save_path = "./Experiments/MLP_Image_Tracking/cat_512_512_2"
+    img_path = "./Assets/Images/Gaussian_Noise_Latent.png"
+    save_path = "./Experiments/MLP_Image_Tracking/Gaussian_noise"
     img_train = Image.open(img_path).resize((width, height))
     img_train.save(save_path + "/train.png")
     img_train = transforms.ToTensor()(img_train).to(device).unsqueeze(0)[:,0:3,:,:] # [1, 3, H, W]
@@ -269,36 +269,59 @@ def main_3():
 def main_4():
     from Neural_Texture_Renderer import NeuralTextureRenderer
     from Neural_Texture_Field import NeuralTextureField
+    from Differentiable_Texture import DiffTexture
     from PIL import Image
     from pytorch3d import io
     from torchvision import transforms
     import time
 
-    renderer = NeuralTextureRenderer()
-    diff_tex = NeuralTextureField(width=256, depth=6, pe_enable=True, sampling_disturb=True)
-
     # asset loading
-    mesh_path = "./Assets/3D_Model/Square/square.obj"
-    image_path = "./Assets/Images/cat_512_512.png"
-    save_path = "./Experiments/MLP_3D_Appearance_Tracking/Square"
+    mesh_path = "./Assets/3D_Model/Orange_Car/source/Orange_Car.obj"
+    texture_path = "./Assets/3D_Model/Orange_Car/textures/Body_dDo_d_orange.jpeg"
+    save_path = "./Experiments/MLP_3D_Appearance_Tracking/Model_Fixed_View"
 
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
+
+    # normalize model, fit it into a bounding box with [-0.5, 0.5] range
+    verts_packed = mesh_obj.verts_packed()
+    verts_max = verts_packed.max(dim=0).values
+    verts_min = verts_packed.min(dim=0).values
+    max_length = (verts_max - verts_min).max().item()
+    center = (verts_max + verts_min)/2
+
+    verts_list = mesh_obj.verts_list()
+    verts_list[:] = [(verts_obj - center)/max_length for verts_obj in verts_list]
+
     _, faces, aux = io.load_obj(mesh_path, device=device)
     mesh_data = {'mesh_obj': mesh_obj, 'faces': faces, 'aux': aux}
 
-    img = Image.open(image_path)
-    img_trained = transforms.ToTensor()(img).unsqueeze(0).permute(0, 2, 3, 1).to(device)
+    renderer = NeuralTextureRenderer()
+    diff_tex = NeuralTextureField(width=256, depth=6, pe_enable=True, sampling_disturb=True)
+    gt_tex = DiffTexture(size=(1024, 1024), is_latent=False)
+
+    image = Image.open(texture_path)
+    image_tensor = transforms.ToTensor()(image).unsqueeze(0)
+    gt_tex.set_image(image_tensor)
 
     # optimization in the fixed view
     # renderer setting
     offset = torch.tensor([[0, 0, 0]])
-    renderer.camera_setting(dist=1.6, elev=0, azim=0, offset=offset)
+    renderer.camera_setting(dist=1.0, elev=0, azim=45, offset=offset)
     renderer.rasterization_setting(image_size=512)
+    renderer.light_setting([[-1, 1, -1]])
+
+    with torch.no_grad():
+        img_trained = renderer.rendering(mesh_data=mesh_data, diff_tex=gt_tex, light_enable=False)[:, :, :, 0:3]
+        img_array = img_trained[0, :, :, 0:3].detach().cpu().numpy()
+        img_array = np.clip(img_array, 0, 1)
+        plt.imsave(save_path+f"/gt.png", img_array)
+        gt_tex.img_save(save_path=save_path+"/gt_tex.png", height=1024, width=1024)
+
 
     # optimization parameters
-    epochs = 5000
-    lr = 0.0001
-    info_update_period = 1000
+    epochs = 10000
+    lr = 0.00001
+    info_update_period = 100
     optimizer = torch.optim.Adam(diff_tex.parameters(), lr=lr)
     criterion = nn.MSELoss()
 
@@ -309,7 +332,7 @@ def main_4():
     for epoch in range(epochs):
         optimizer.zero_grad()
 
-        img_rendered = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex, light_enable=True)[:, :, :, 0:3]
+        img_rendered = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex, light_enable=False)[:, :, :, 0:3]
 
         loss = criterion(img_rendered, img_trained)
         total_loss += loss
@@ -324,6 +347,96 @@ def main_4():
             img_rendered = img_rendered[0, :, :, 0:3].detach().cpu().numpy()
             img_rendered = np.clip(img_rendered, 0, 1)
             plt.imsave(save_path+f"/rendered_ep_{epoch+1}.png", img_rendered)
+
+            start_t = end_t
+
+def main_5():
+    from Neural_Texture_Renderer import NeuralTextureRenderer
+    from Neural_Texture_Field import NeuralTextureField
+    from Differentiable_Texture import DiffTexture
+    from PIL import Image
+    from pytorch3d import io
+    from torchvision import transforms
+    import time
+
+    # asset loading
+    mesh_path = "./Assets/3D_Model/Orange_Car/source/Orange_Car.obj"
+    texture_path = "./Assets/3D_Model/Orange_Car/textures/Body_dDo_d_orange.jpeg"
+    save_path = "./Experiments/MLP_3D_Appearance_Tracking/Model"
+
+    mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
+
+    # normalize model, fit it into a bounding box with [-0.5, 0.5] range
+    verts_packed = mesh_obj.verts_packed()
+    verts_max = verts_packed.max(dim=0).values
+    verts_min = verts_packed.min(dim=0).values
+    max_length = (verts_max - verts_min).max().item()
+    center = (verts_max + verts_min)/2
+
+    verts_list = mesh_obj.verts_list()
+    verts_list[:] = [(verts_obj - center)/max_length for verts_obj in verts_list]
+
+    _, faces, aux = io.load_obj(mesh_path, device=device)
+    mesh_data = {'mesh_obj': mesh_obj, 'faces': faces, 'aux': aux}
+
+    renderer = NeuralTextureRenderer()
+    diff_tex = NeuralTextureField(width=256, depth=6, pe_enable=True, sampling_disturb=True)
+    gt_tex = DiffTexture(size=(1024, 1024), is_latent=False)
+
+    image = Image.open(texture_path)
+    image_tensor = transforms.ToTensor()(image).unsqueeze(0)
+    gt_tex.set_image(image_tensor)
+
+    # optimization in the fixed view
+    # renderer setting
+    offset = torch.tensor([[0, 0, 0]])
+    renderer.camera_setting(dist=1.0, elev=0, azim=45, offset=offset)
+    renderer.rasterization_setting(image_size=512)
+    renderer.light_setting([[-1, 1, -1]])
+
+    with torch.no_grad():
+        img_list_trained = renderer.render_around(mesh_data=mesh_data, diff_tex=gt_tex, dist=1.0, elev=0, light_enable=False)
+        for count, img_tensor in enumerate(img_list_trained):
+            img_array = img_tensor[0, :, :, 0:3].detach().cpu().numpy()
+            img_array = np.clip(img_array, 0, 1)
+            plt.imsave(save_path+f"/gt_{count}.png", img_array)
+        gt_tex.img_save(save_path=save_path+f"/gt_tex.png", height=1024, width=1024)
+
+
+    # optimization parameters
+    epochs = 10000
+    lr = 0.00001
+    info_update_period = 500
+    optimizer = torch.optim.Adam(diff_tex.parameters(), lr=lr)
+    criterion = nn.MSELoss()
+
+    #training starts
+    print("[INFO] training starts...")
+    total_loss = 0
+    start_t = time.time()
+    for epoch in range(epochs):
+        for count, img_trained in enumerate(img_list_trained):
+            optimizer.zero_grad()
+
+            renderer.camera_setting(dist=1.0, elev=0, azim=count*45, offset=offset)
+            img_rendered = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex, light_enable=False)[:, :, :, 0:3]
+            loss = criterion(img_rendered, img_trained[:, :, :, 0:3])
+            total_loss += loss
+            loss.backward()
+            optimizer.step()
+
+        if (epoch+1) % info_update_period == 0:
+            end_t = time.time()
+            print(f"[INFO] Epoch {epoch+1}, takes {(end_t - start_t):.4f} s. Loss: {total_loss/info_update_period}")
+            total_loss = 0
+            diff_tex.img_save(save_path=save_path+f"/tex_ep_{epoch+1}.png")
+            image_tensors = renderer.render_around(mesh_data=mesh_data, diff_tex=diff_tex, dist=1.0, offset=offset, elev=0)
+            for count, image_tensor in enumerate(image_tensors):
+                image_array = image_tensor[0, :, :, 0:3].cpu().detach().numpy()
+                image_array = np.clip(image_array, 0, 1)
+                plt.imsave(save_path+f"/rendered_ep_{epoch+1}_{count}.png", image_array)
+            
+            del image_tensors
 
             start_t = end_t
 

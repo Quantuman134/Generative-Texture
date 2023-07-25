@@ -55,8 +55,8 @@ class NeuralTextureShader(shader.ShaderBase):
         blend_params = kwargs.get("blend_params", self.blend_params)
         #print(texels.size())
         if self.light_enable:
-            #temp code, because the embedded phong_shading does not support 4 dimension color...
-            colors1 = shader.phong_shading(
+            #do not support rendering in latent space
+            colors = shader.phong_shading(
                 meshes=meshes,
                 fragments=fragments,
                 texels=texels[:, :, :, :, 0:3],
@@ -64,18 +64,7 @@ class NeuralTextureShader(shader.ShaderBase):
                 cameras=cameras,
                 materials=materials
             )
-            
-            colors2 = shader.phong_shading(
-                meshes=meshes,
-                fragments=fragments,
-                texels=texels[:, :, :, :,1:4],
-                lights=lights,
-                cameras=cameras,
-                materials=materials
-            )
-            colors = torch.ones_like(texels)
-            colors[:, :, :, :, 0:3] = colors1[:, :, :, :, 0:3]
-            colors[:, :, :, :, 3] = colors2[:, :, :, :, 2]
+
         else:
             colors = texels # no lighting
         znear = kwargs.get("znear", getattr(cameras, "znear", 1.0))

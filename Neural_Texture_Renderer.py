@@ -63,49 +63,43 @@ def main():
     from torchvision import transforms
 
     renderer = NeuralTextureRenderer()
-    mesh_path = "./Assets/3D_Model/Nascar/mesh.obj"
-    image_path = "./Experiments/Generative_Texture_2/Diff_Texture_Around/nascar_256_2/tex_result.png"
-    save_path = "./temp"
+    mesh_path = "./Assets/3D_Model/Orange_Car/source/Orange_Car.obj"
+    image_path = "./Experiments/Generative_Texture_MLP/Orange_Car/tex_result.png"
+    save_path = "./Experiments/Generative_Texture_MLP/Orange_Car"
     #mlp_path = "./Assets/Image_MLP/gaussian_noise/nth.pt"
     #diff_tex = torch.jit.load(mlp_path)
-    diff_tex = DiffTexture(size=(1024, 1024), is_latent=False)
+    diff_tex = DiffTexture(size=(512, 512), is_latent=False)
     image = Image.open(image_path)
     image_tensor = transforms.ToTensor()(image).unsqueeze(0)
     diff_tex.set_image(image_tensor)
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
 
     verts_packed = mesh_obj.verts_packed()
-
     verts_max = verts_packed.max(dim=0).values
     verts_min = verts_packed.min(dim=0).values
     max_length = (verts_max - verts_min).max().item()
     center = (verts_max + verts_min)/2
-    print(max_length)
-    print(center)
 
     verts_list = mesh_obj.verts_list()
-    for verts_obj in verts_list:
-        verts_obj = verts_obj/max_length *0.1
+    verts_list[:] = [(verts_obj - center)/max_length for verts_obj in verts_list]
 
     _, faces, aux = io.load_obj(mesh_path, device=device)
     mesh_data = {'mesh_obj': mesh_obj, 'faces': faces, 'aux': aux}
 
-    offset = -center.cpu()
-    renderer.camera_setting(dist=1.3, elev=45, azim=90, offset=offset)
+    offset = torch.tensor([0, 0, 0])
+    renderer.camera_setting(dist=1.0, elev=0, azim=0, offset=offset)
     renderer.rasterization_setting(image_size=512)
     image_tensor = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex, light_enable=True)
     image_array = image_tensor[0, :, :, 0:3].cpu().detach().numpy()
     image_array = np.clip(image_array, 0, 1)
-    #plt.imshow(image_array)
-    #plt.show()
+    plt.imshow(image_array)
+    plt.show()
 
-    image_tensors = renderer.render_around(mesh_data=mesh_data, diff_tex=diff_tex, dist=1.3, offset=offset, elev=0)
-    i=0
-    for image_tensor in image_tensors:
-        i+=1
+    image_tensors = renderer.render_around(mesh_data=mesh_data, diff_tex=diff_tex, dist=1.0, offset=offset, elev=0)
+    for count, image_tensor in enumerate(image_tensors):
         image_array = image_tensor[0, :, :, 0:3].cpu().detach().numpy()
         image_array = np.clip(image_array, 0, 1)
-        plt.imsave(save_path+f"/rendered_result_{i}.png", image_array)
+        plt.imsave(save_path+f"/rendered_result_{count}.png", image_array)
 
 
 #latent space

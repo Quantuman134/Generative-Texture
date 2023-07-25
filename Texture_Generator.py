@@ -15,6 +15,17 @@ class TextureGenerator:
         self.device = device
         mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
         _, faces, aux = io.load_obj(mesh_path, device=device)
+
+        # put mesh in center and [-0.5, 0.5] bounding box
+        verts_packed = mesh_obj.verts_packed()
+        verts_max = verts_packed.max(dim=0).values
+        verts_min = verts_packed.min(dim=0).values
+        max_length = (verts_max - verts_min).max().item()
+        center = (verts_max + verts_min)/2
+
+        verts_list = mesh_obj.verts_list()
+        verts_list[:] = [(verts_obj - center)/max_length for verts_obj in verts_list]
+
         self.mesh_data = {'mesh_obj': mesh_obj, 'faces': faces, 'aux': aux}
         self.diff_tex = diff_tex
         if diff_tex is None:
@@ -66,10 +77,14 @@ class TextureGenerator:
             optimizer.zero_grad()
 
             rand = torch.rand(3)
+            randint = torch.randint(0, 25, size=(1, ))
 
             dist = rand[0] * (dist_range[1] - dist_range[0]) + dist_range[0]
-            elev = rand[1] * (elev_range[1] - elev_range[0]) + elev_range[0]
-            azim = rand[2] * (azim_range[1] - azim_range[0]) + azim_range[0]
+            #elev = rand[1] * (elev_range[1] - elev_range[0]) + elev_range[0]
+            #azim = rand[2] * (azim_range[1] - azim_range[0]) + azim_range[0]
+            elev = 0
+            azim = 15 * randint[0]
+            #azim = 90.0
             self.renderer.camera_setting(dist=dist, elev=elev, azim=azim, offset=offset)
             pred_tensor = self.renderer.rendering(self.mesh_data, self.diff_tex, light_enable=False, rand_back=True)[:, :, :, 0:-1]
 
@@ -125,15 +140,19 @@ def main():
     import numpy as np
     import matplotlib.pyplot as plt
 
-    mesh_path = "./Assets/3D_Model/Nascar/mesh.obj"
-    text_prompt = "a next gen of nascar"
-    save_path = "./Experiments/Generative_Texture_2/Diff_Texture_Around/temp_test"
-    #mlp_path = "./Assets/Image_MLP/gaussian_noise/nth.pt"
-    #tex_net = torch.jit.load(mlp_path)
-    diff_tex = DiffTexture(size=(256, 256), is_latent=True)
-    texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=diff_tex, is_latent=True)
-    texture_generator.texture_train(text_prompt=text_prompt, lr=0.01, epochs=5000, save_path=save_path, 
-                                    offset=[0, -0.25, 0.0], dist_range=[0.5, 1.2], elev_range=[0.0, 0.0], azim_range=[80.0, 100.0])
+    mesh_path = "./Assets/3D_Model/Orange_Car/source/Orange_Car.obj"
+    text_prompt = "a Chevrolet pony car"
+    save_path = "./Experiments/Generative_Texture_MLP/Orange_Car"
+    mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent/latent_noise.pth"
+
+    #diff_tex = DiffTexture(size=(256, 256), is_latent=True)
+    diff_tex = NeuralTextureField(width=256, depth=6)
+    diff_tex.tex_load(tex_path=mlp_path)
+
+    texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=diff_tex, is_latent=False)
+    texture_generator.texture_train(text_prompt=text_prompt, lr=0.00001, epochs=100000, save_path=save_path, 
+                                    dist_range=[1.0, 1.0], elev_range=[0.0, 360.0], azim_range=[0.0, 360.0],
+                                    info_update_period=100)
 
 
 if __name__ == "__main__":
