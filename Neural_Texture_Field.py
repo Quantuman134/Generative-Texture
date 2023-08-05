@@ -136,21 +136,24 @@ def main():
     parse.add_argument( '--ns', action='store_true', help='do not save the network and images')
     arg = parse.parse_args()
 
-    height = 512
-    width = 512
+    height = 64
+    width = 64
     
     img_path = "./Assets/Images/Gaussian_Noise_Latent.png"
-    save_path = "./Experiments/MLP_Image_Tracking/Gaussian_noise"
+    save_path = "./Experiments/MLP_Image_Tracking/Gaussian_noise_64"
+    #img_path = "./Assets/Images/cat.jpg"
+    #save_path = "./Experiments/MLP_Image_Tracking/cat_64_64"
     img_train = Image.open(img_path).resize((width, height))
     img_train.save(save_path + "/train.png")
     img_train = transforms.ToTensor()(img_train).to(device).unsqueeze(0)[:,0:3,:,:] # [1, 3, H, W]
 
-    test_mlp = NeuralTextureField(width=256, depth=6, pe_enable=True)
+    test_mlp = NeuralTextureField(width=32, depth=6, pe_enable=True)
 
     #load existing model
     #load_path = "./Experiments/MLP_Image_Tracking/cat_256_256/nth.pth"
     #test_mlp.tex_load(load_path)
     
+    #recommanded lr: mlp 256x6 --- 0.0001, mlp 32x4 ---0.001
     learning_rate = 0.001
     if arg.lr:
         learning_rate = arg.lr
@@ -158,7 +161,7 @@ def main():
     if arg.ep:
         epochs = arg.ep
     
-    info_update_period = 1000
+    info_update_period = 5000
     optimizer = torch.optim.AdamW(test_mlp.parameters(), lr=learning_rate)
     criterion = nn.MSELoss()
     
@@ -192,10 +195,11 @@ def main_2():
     import torch
     from Neural_Texture_Field import NeuralTextureField
 
-    mlp = NeuralTextureField(width=256, depth=6, pe_enable=True)
-    load_path = "./Experiments/MLP_Image_Tracking/cat_512_512_disturb_coordinate/nth.pth"
+    mlp = NeuralTextureField(width=32, depth=6, pe_enable=True)
+    load_path = "./Assets/Image_MLP/Gaussian_noise_latent_64/nth.pth"
     mlp.tex_load(load_path)
-    img_tensor = mlp.render_img(512, 512, disturb=True)
+    mlp.sampling_disturb=True
+    img_tensor = mlp.render_img(64, 64)
     #validation rendering
     img_array = img_tensor[0, 0:3, :, :].permute(1, 2, 0).detach().cpu().numpy()
     img_array = np.clip(img_array, 0, 1)
@@ -214,29 +218,30 @@ def main_3():
     import time
 
     renderer = NeuralTextureRenderer()
-    diff_tex = NeuralTextureField(width=256, depth=6, pe_enable=True, sampling_disturb=True)
+    diff_tex = NeuralTextureField(width=32, depth=6, pe_enable=True, sampling_disturb=True)
 
     # asset loading
     mesh_path = "./Assets/3D_Model/Square/square.obj"
     image_path = "./Assets/Images/cat_512_512.png"
-    save_path = "./Experiments/MLP_3D_Appearance_Tracking/Square"
+    save_path = "./Experiments/MLP_3D_Appearance_Tracking/Square/cat_64"
 
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
     _, faces, aux = io.load_obj(mesh_path, device=device)
     mesh_data = {'mesh_obj': mesh_obj, 'faces': faces, 'aux': aux}
 
-    img = Image.open(image_path)
+    img = Image.open(image_path).resize((64, 64))
+    img.save(save_path + "/train.png")
     img_trained = transforms.ToTensor()(img).unsqueeze(0).permute(0, 2, 3, 1).to(device)
-
+    
     # optimization in the fixed view
     # renderer setting
     offset = torch.tensor([[0, 0, 0]])
     renderer.camera_setting(dist=1.6, elev=0, azim=0, offset=offset)
-    renderer.rasterization_setting(image_size=512)
+    renderer.rasterization_setting(image_size=64)
 
     # optimization parameters
-    epochs = 5000
-    lr = 0.0001
+    epochs = 10000
+    lr = 0.001
     info_update_period = 1000
     optimizer = torch.optim.Adam(diff_tex.parameters(), lr=lr)
     criterion = nn.MSELoss()
@@ -441,4 +446,4 @@ def main_5():
             start_t = end_t
 
 if __name__ == "__main__":
-    main()
+    main_3()

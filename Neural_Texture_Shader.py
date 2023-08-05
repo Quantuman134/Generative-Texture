@@ -26,7 +26,9 @@ class NeuralTextureShader(shader.ShaderBase):
         mesh: Meshes = None,
         aux = None,
         faces = None,
-        rand_back = False
+        rand_back = False,
+        depth_render = False,
+        depth_value_inverse = False
         ):
         super().__init__(device, cameras, lights, materials, blend_params)
         self.diff_tex = diff_tex
@@ -35,14 +37,22 @@ class NeuralTextureShader(shader.ShaderBase):
         self.faces = faces
         self.light_enable = light_enable
         self.rand_back = rand_back
+        self.depth_render = depth_render
+        self.depth_value_inverse = depth_value_inverse
 
     def forward(self, fragments: Fragments, meshes: Meshes, **kwargs) -> torch.Tensor:
         cameras = super()._get_cameras(**kwargs)
         #texels = self.texture_sample(fragments)
         #texels = self.pixel_coordinate_color(fragments=fragments)
-        #texels = self.z_coordinate_color(fragments=fragments)
         #texels = self.world_coordinate_color(fragments=fragments)
+
         texels = self.texture_sample(fragments=fragments)
+
+        if self.depth_render:
+            texels_z = self.z_coordinate_color(fragments=fragments)
+            texels = texels * texels_z
+
+        #texels = self.norm_color(fragments=fragments)
         #texels = self.texture_uv_color(fragments=fragments)
         #texels = torch.tensor([1, 0, 0], dtype=torch.float32, device=self.device, requires_grad=True)
         #texels = texels.repeat(torch.unsqueeze(fragments.pix_to_face, 4).size())
@@ -90,14 +100,18 @@ class NeuralTextureShader(shader.ShaderBase):
         #r represent the indice i, and g represent the indice j
         N, H, W, K = fragments.pix_to_face.size()
         z = fragments.zbuf
-        z_near = self.cameras.znear
-        z_far = self.cameras.zfar - 96
-        print(z.size())
+        z_max = z.max().item()
+        z_min = z[z>-1].min().item()
+        if self.depth_value_inverse:
+            z[z>-1] = (z_max + 0.5*(z_max - z_min) - z[z>-1]) / ((z_max - z_min) * 1.5)
+        else:
+            z[z>-1] = (z[z>-1] - z_min + 0.5*(z_max - z_min)) / ((z_max - z_min) * 1.5)
+
         texels = torch.zeros((N, H, W, K, 3), device=self.device)
-        texels[:, :, :, :, 0] = (z - z_near)/(z_far - z_near)
-        texels[:, :, :, :, 1] = (z - z_near)/(z_far - z_near)
-        texels[:, :, :, :, 2] = (z - z_near)/(z_far - z_near)
-        print(texels[:, :, :, :, 2].size())
+        texels[:, :, :, :, 0] = z
+        texels[:, :, :, :, 1] = z
+        texels[:, :, :, :, 2] = z
+        #print(texels[:, :, :, :, 2].size())
         #texels[texels<0] == 0
 
         return texels
@@ -151,6 +165,20 @@ class NeuralTextureShader(shader.ShaderBase):
         colors = torch.cat((pixel_uvs, zero_temp), dim=1)
         texels = colors.reshape(N, H, W, K, 3)
         return texels
+
+    def norm_color(self, fragments: Fragments):
+        N, H, W, K = fragments.pix_to_face.size()
+        packing_list = [
+            i[j] for i, j in zip([self.aux.normals.to(self.device)], [self.faces.normals_idx.to(self.device)])
+        ]
+        faces_normals = torch.cat(packing_list)
+        pixel_normals = interpolate_face_attributes(
+            fragments.pix_to_face, fragments.bary_coords, faces_normals
+        ).reshape(-1, 3)
+        colors = pixel_normals
+        texels = colors.reshape(N, H, W, K, 3)
+        return texels
+
 
     def texture_sample(self, fragments: Fragments, nearest=False):
         N, H, W, K = fragments.pix_to_face.size()

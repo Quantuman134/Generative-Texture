@@ -41,7 +41,12 @@ class TextureGenerator:
     def texture_train(self, text_prompt, lr, epochs, save_path=None, 
                       offset=[0.0, 0.0, 0.0], dist_range=[1.0, 2.0], 
                       elev_range=[0.0, 360.0], azim_range=[0.0, 360.0],
-                      info_update_period=500):
+                      info_update_period=500, render_light_enable=False,
+                      tex_size=512, rendered_img_size=512, annealation=False):
+
+        # highlight: a temp code line, normal is 512
+        self.renderer.rasterization_setting(image_size=rendered_img_size)
+
         if self.is_latent:
             self.renderer.rasterization_setting(image_size=64)
         
@@ -49,9 +54,9 @@ class TextureGenerator:
 
         #save initial data
         if save_path is not None:
-            self.diff_tex.img_save(save_path=save_path + f"/tex_initial.png")
-            img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, offset=offset, 
-                                                          light_enable=False, dist=dist_range[1])
+            self.diff_tex.img_save(save_path=save_path + f"/tex_initial.png", width=tex_size, height=tex_size)
+            img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, offset=offset, elev=25, 
+                                                          light_enable=render_light_enable, dist=dist_range[1])
             
             for count, img_tensor in enumerate(img_tensor_list):
                 #latent to RGB
@@ -66,27 +71,42 @@ class TextureGenerator:
         
         optimizer = torch.optim.Adam(self.diff_tex.parameters(), lr=lr)
         guidance = StableDiffusion(device=self.device)
+        guidance.eval()
         text_embeddings = guidance.get_text_embeds(text_prompt, '')
 
         print(f"[INFO] traning starts")
         start_t = time.time()
         total_loss = 0
 
+        # annealation
+        min_t = 0.02
+        max_t = 0.98
+        min_t_ann = 0.02
+        max_t_ann = 0.50
+        ann_threshold = 0.3
+
         for epoch in range(epochs):
 
             optimizer.zero_grad()
 
             rand = torch.rand(3)
-            randint = torch.randint(0, 25, size=(1, ))
+            randint = torch.randint(0, 13, size=(2, ))
+            rand_render = torch.randint(0, 2, size=(2, ))
+
+            bool_list = [True, False]
 
             dist = rand[0] * (dist_range[1] - dist_range[0]) + dist_range[0]
             #elev = rand[1] * (elev_range[1] - elev_range[0]) + elev_range[0]
             #azim = rand[2] * (azim_range[1] - azim_range[0]) + azim_range[0]
-            elev = 0
-            azim = 15 * randint[0]
+            elev = 30 * randint[0] / 2
+            azim = 30 * randint[1]
             #azim = 90.0
             self.renderer.camera_setting(dist=dist, elev=elev, azim=azim, offset=offset)
-            pred_tensor = self.renderer.rendering(self.mesh_data, self.diff_tex, light_enable=False, rand_back=True)[:, :, :, 0:-1]
+            pred_tensor = self.renderer.rendering(self.mesh_data, self.diff_tex, 
+                                                  light_enable=render_light_enable, rand_back=True, 
+                                                  depth_render=bool_list[rand_render[0]],
+                                                  depth_value_inverse=bool_list[rand_render[1]]
+                                                  )[:, :, :, 0:-1]
 
             # save mediate results
             if (save_path is not None) and ((epoch+1) % info_update_period == 0):
@@ -100,10 +120,21 @@ class TextureGenerator:
                 img_array = img_tensor[0, :, :, :].cpu().detach().numpy()
                 img_array = np.clip(img_array, 0, 1)
                 plt.imsave(save_path + f"/ep_{epoch+1}.png", img_array)
-                self.diff_tex.img_save(save_path=save_path + f"/tex_ep_{epoch+1}.png")
+                self.diff_tex.img_save(save_path=save_path + f"/tex_ep_{epoch+1}.png", width=tex_size, height=tex_size)
 
             pred_tensor = pred_tensor.permute(0, 3, 1, 2)
-            tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, text_embeddings=text_embeddings, latent_input=self.is_latent)
+
+            # SDS with annealation process
+            if annealation:
+                if epoch <= epochs * ann_threshold:
+                    tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, text_embeddings=text_embeddings,
+                                                                   latent_input=self.is_latent, min_t=min_t, max_t=max_t)
+                else:
+                    tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, text_embeddings=text_embeddings,
+                                                                   latent_input=self.is_latent, min_t=min_t_ann, max_t=max_t_ann)
+            else:
+                tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, text_embeddings=text_embeddings,
+                                                                   latent_input=self.is_latent, min_t=min_t, max_t=max_t)
             tensor_for_backward.backward()
             optimizer.step()
             total_loss += p_loss
@@ -120,7 +151,8 @@ class TextureGenerator:
         
         if save_path is not None:
             self.diff_tex.img_save(save_path=save_path + f"/tex_result.png")
-            img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, offset=offset, light_enable=False, dist=1.3)
+            img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, offset=offset, elev=25,
+                                                           light_enable=render_light_enable, dist=dist_range[1])
 
             for count, img_tensor in enumerate(img_tensor_list):
                 #latent to RGB
@@ -131,29 +163,39 @@ class TextureGenerator:
                 img_array = img_tensor[0, :, :, 0:3].cpu().detach().numpy()
                 img_array = np.clip(img_array, 0, 1)
                 plt.imsave(save_path + f"/results_{count}.png", img_array)
+            
+            self.diff_tex_save(save_path=save_path+"/nth.pth")
 
-    #temprarily disable
-    def tex_net_save(self, save_path):
-        self.diff_tex.net_save(save_path)
+    def diff_tex_save(self, save_path):
+        self.diff_tex.tex_save(save_path)
 
 def main():
     import numpy as np
     import matplotlib.pyplot as plt
 
-    mesh_path = "./Assets/3D_Model/Orange_Car/source/Orange_Car.obj"
-    text_prompt = "a Chevrolet pony car"
-    save_path = "./Experiments/Generative_Texture_MLP/Orange_Car"
-    mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent/latent_noise.pth"
+    seed_everything(0)
 
-    #diff_tex = DiffTexture(size=(256, 256), is_latent=True)
-    diff_tex = NeuralTextureField(width=256, depth=6)
+    mesh_path = "./Assets/3D_Model/Nascar/mesh.obj"
+    text_prompt = "a next gen of nascar"
+    save_path = "./Experiments/Generative_Texture_MLP/Nascar/test1"
+    mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent/latent_noise.pth"
+    #mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent_64/nth.pth"
+
+    diff_tex = DiffTexture(size=(256, 256), is_latent=True)
+
+    #diff_tex = NeuralTextureField(width=32, depth=6, pe_enable=True)
     diff_tex.tex_load(tex_path=mlp_path)
 
-    texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=diff_tex, is_latent=False)
-    texture_generator.texture_train(text_prompt=text_prompt, lr=0.00001, epochs=100000, save_path=save_path, 
-                                    dist_range=[1.0, 1.0], elev_range=[0.0, 360.0], azim_range=[0.0, 360.0],
-                                    info_update_period=100)
+    img_size=64
+    tex_size=512
 
+    texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=diff_tex, is_latent=False)
+
+    #recomanded lr: mlp 256x6 --- 0.00001, mlp 32x6 --- 0.0001, 
+    texture_generator.texture_train(text_prompt=text_prompt, lr=0.0001, epochs=4000, save_path=save_path, 
+                                    dist_range=[1.0, 1.0], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
+                                    info_update_period=100, render_light_enable=True, tex_size=tex_size, 
+                                    rendered_img_size=img_size)
 
 if __name__ == "__main__":
     main()
