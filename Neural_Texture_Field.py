@@ -5,6 +5,7 @@ from utils import device
 import utils
 import matplotlib.pyplot as plt
 import numpy as np
+import tinycudann as tcnn
 
 ################################
 #the position encoding layer
@@ -48,16 +49,16 @@ class NeuralTextureField(nn.Module):
             pe = PositionEncoding(input_dim=input_dim)
             layers.append(pe)
             #layers.append(nn.ReLU())
-            layers.append(nn.Linear(pe.mapping_size, width))
+            layers.append(nn.Linear(pe.mapping_size, width, bias=False))
         else:
-            layers.append(nn.Linear(input_dim, width))  
+            layers.append(nn.Linear(input_dim, width, bias=False))  
 
         for i in range(depth - 2):
             layers.append(nn.ReLU())
-            layers.append(nn.Linear(width, width))
+            layers.append(nn.Linear(width, width, bias=False))
 
         layers.append(nn.ReLU())  
-        layers.append(nn.Linear(width, self.output_dim))
+        layers.append(nn.Linear(width, self.output_dim, bias=False))
         self.base = nn.ModuleList(layers)
 
         self.reset_weights()
@@ -66,8 +67,8 @@ class NeuralTextureField(nn.Module):
         print(self.base)
         
     def reset_weights(self):
-        self.base[-1].weight.data = torch.randn_like(self.base[-1].weight.data)
-        self.base[-1].bias.data = torch.randn_like(self.base[-1].bias.data)
+        self.base[-1].weight.data = torch.ones_like(self.base[-1].weight.data) * 0.5
+        #self.base[-1].bias.data = torch.randn_like(self.base[-1].bias.data)
 
     def forward(self, x):
         if self.sampling_disturb:
@@ -223,7 +224,7 @@ def main_3():
     # asset loading
     mesh_path = "./Assets/3D_Model/Square/square.obj"
     image_path = "./Assets/Images/cat_512_512.png"
-    save_path = "./Experiments/MLP_3D_Appearance_Tracking/Square/cat_64"
+    save_path = "./Experiments/MLP_3D_Appearance_Tracking/Square/cat_32"
 
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
     _, faces, aux = io.load_obj(mesh_path, device=device)

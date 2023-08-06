@@ -23,34 +23,36 @@ class NeuralTextureShader(shader.ShaderBase):
         lights: Optional[TensorProperties] = None,
         materials: Optional[Materials] = None,
         blend_params: Optional[BlendParams] = None,
-        mesh: Meshes = None,
-        aux = None,
-        faces = None,
+        mesh_data = None,
         rand_back = False,
         depth_render = False,
-        depth_value_inverse = False
+        depth_value_inverse = False,
+        field_sample = False
         ):
         super().__init__(device, cameras, lights, materials, blend_params)
         self.diff_tex = diff_tex
-        self.mesh = mesh
-        self.aux = aux
-        self.faces = faces
+        self.mesh = mesh_data['mesh_obj']
+        self.verts = mesh_data['verts']
+        self.aux = mesh_data['aux']
+        self.faces = mesh_data['faces']
         self.light_enable = light_enable
         self.rand_back = rand_back
         self.depth_render = depth_render
         self.depth_value_inverse = depth_value_inverse
+        self.field_sample = field_sample
 
     def forward(self, fragments: Fragments, meshes: Meshes, **kwargs) -> torch.Tensor:
         cameras = super()._get_cameras(**kwargs)
         #texels = self.texture_sample(fragments)
         #texels = self.pixel_coordinate_color(fragments=fragments)
         #texels = self.world_coordinate_color(fragments=fragments)
-
-        texels = self.texture_sample(fragments=fragments)
-
         if self.depth_render:
             texels_z = self.z_coordinate_color(fragments=fragments)
             texels = texels * texels_z
+        elif self.field_sample:
+            texels = self.field_texture_sample(fragments=fragments)
+        else:
+            texels = self.texture_sample(fragments=fragments)
 
         #texels = self.norm_color(fragments=fragments)
         #texels = self.texture_uv_color(fragments=fragments)
@@ -136,20 +138,16 @@ class NeuralTextureShader(shader.ShaderBase):
         #r represent the indice x, g represent the indice y, b represent the indice z
         N, H, W, K = fragments.pix_to_face.size()
         depth = fragments.zbuf
-        #ndc coord
-        h = ((torch.arange(start=0, end=H, device=self.device) * 2 + 1.0) / H - 1.0).unsqueeze(0).transpose(0, 1).repeat(1, W)
-        w = ((torch.arange(start=0, end=W, device=self.device) * 2 + 1.0) / W - 1.0).unsqueeze(0).repeat(H, 1)
-        ndc_coordinate = torch.ones((H, W, 3), device=self.device)
-        ndc_coordinate[:, :, 0] *= -w
-        ndc_coordinate[:, :, 1] *= -h
-        ndc_coordinate[:, :, 2] *= depth.reshape(H, W)
-        world_coordinate = self.cameras.unproject_points(ndc_coordinate, world_coordinates=True)
-        #color normalize
-        world_coordinate[:, :, 0] = (world_coordinate[:, :, 0] + 1) / 2
-        world_coordinate[:, :, 1] = (world_coordinate[:, :, 1] + 1) / 2
-        world_coordinate[:, :, 2] = (world_coordinate[:, :, 2] + 3) / 4
+        packing_list = [
+            i[j] for i, j in zip([self.verts.to(self.device)], [self.faces.verts_idx.to(self.device)])
+        ]
+        faces_verts = torch.cat(packing_list)
+        pixel_verts = interpolate_face_attributes(
+            fragments.pix_to_face, fragments.bary_coords, faces_verts
+        ).reshape(-1, 3)
 
-        texels = world_coordinate.unsqueeze(0).unsqueeze(3).repeat(N, 1, 1, K, 1)
+        colors = pixel_verts + 0.5
+        texels = colors.reshape(N, H, W, K, 3)
         return texels    
     
     def texture_uv_color(self, fragments: Fragments):
@@ -177,10 +175,52 @@ class NeuralTextureShader(shader.ShaderBase):
         ).reshape(-1, 3)
         colors = pixel_normals
         texels = colors.reshape(N, H, W, K, 3)
-        return texels
+        return texels    
+    
+    def field_texture_sample(self, fragments: Fragments, nearest=False):
+        N, H, W, K = fragments.pix_to_face.size()
+        depth = fragments.zbuf
+        packing_list = [
+            i[j] for i, j in zip([self.verts.to(self.device)], [self.faces.verts_idx.to(self.device)])
+        ]
+        faces_verts = torch.cat(packing_list)
+        pixel_verts = interpolate_face_attributes(
+            fragments.pix_to_face, fragments.bary_coords, faces_verts
+        ).reshape(-1, 3)
 
+        pixel_verts = pixel_verts * 2.0 #range [-1, 1]
+        colors = self.diff_tex(pixel_verts)
+
+        if colors.size()[1] == 3:
+            colors = (colors + 1) / 2
+        colors = colors.reshape(N, H, W, colors.size()[1])
+        texels = colors.unsqueeze(3).repeat(1, 1, 1, K, 1)
+        return texels 
 
     def texture_sample(self, fragments: Fragments, nearest=False):
+        N, H, W, K = fragments.pix_to_face.size()
+        packing_list = [
+            i[j] for i, j in zip([self.aux.verts_uvs.to(self.device)], [self.faces.textures_idx.to(self.device)])
+        ]
+        faces_verts_uvs = torch.cat(packing_list)
+
+        #ave_bary_coords = torch.ones_like(fragments.bary_coords) * (1.0/3)
+        pixel_uvs = interpolate_face_attributes(fragments.pix_to_face, fragments.bary_coords, faces_verts_uvs).reshape(-1, 2) #range [0, 1]
+        #pixel_uvs = interpolate_face_attributes(fragments.pix_to_face, ave_bary_coords, faces_verts_uvs).reshape(-1, 2) #range [0, 1]
+
+        pixel_uvs = pixel_uvs * 2.0 - 1.0 #range [-1, 1]
+        temps = pixel_uvs[:, 0].clone()
+        pixel_uvs[:, 0] = -pixel_uvs[:, 1]
+        pixel_uvs[:, 1] = temps
+        colors = self.diff_tex(pixel_uvs)
+        if colors.size()[1] == 3:
+            colors = (colors + 1) / 2
+        colors = colors.reshape(N, H, W, colors.size()[1])
+        #print(colors[256, 256, :])
+        texels = colors.unsqueeze(3).repeat(1, 1, 1, K, 1)
+        return texels 
+
+    def field_sample(self, fragments: Fragments, nearest=False):
         N, H, W, K = fragments.pix_to_face.size()
         packing_list = [
             i[j] for i, j in zip([self.aux.verts_uvs.to(self.device)], [self.faces.textures_idx.to(self.device)])

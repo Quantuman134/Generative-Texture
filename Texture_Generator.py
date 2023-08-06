@@ -14,7 +14,7 @@ class TextureGenerator:
     def __init__(self, mesh_path, diff_tex=None, is_latent=False) -> None:
         self.device = device
         mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
-        _, faces, aux = io.load_obj(mesh_path, device=device)
+        verts, faces, aux = io.load_obj(mesh_path, device=device)
 
         # put mesh in center and [-0.5, 0.5] bounding box
         verts_packed = mesh_obj.verts_packed()
@@ -25,8 +25,11 @@ class TextureGenerator:
 
         verts_list = mesh_obj.verts_list()
         verts_list[:] = [(verts_obj - center)/max_length for verts_obj in verts_list]
+    
+        verts = (verts - center)/max_length
 
-        self.mesh_data = {'mesh_obj': mesh_obj, 'faces': faces, 'aux': aux}
+        self.mesh_data = {'mesh_obj': mesh_obj,'verts': verts, 'faces': faces, 'aux': aux}
+
         self.diff_tex = diff_tex
         if diff_tex is None:
             self.diff_tex = DiffTexture(is_latent=is_latent)
@@ -42,7 +45,8 @@ class TextureGenerator:
                       offset=[0.0, 0.0, 0.0], dist_range=[1.0, 2.0], 
                       elev_range=[0.0, 360.0], azim_range=[0.0, 360.0],
                       info_update_period=500, render_light_enable=False,
-                      tex_size=512, rendered_img_size=512, annealation=False):
+                      tex_size=512, rendered_img_size=512, annealation=False,
+                      field_sample=False):
 
         # highlight: a temp code line, normal is 512
         self.renderer.rasterization_setting(image_size=rendered_img_size)
@@ -52,11 +56,16 @@ class TextureGenerator:
         
         offset = torch.tensor([offset])
 
+        # light setting
+        self.renderer.light_setting(directions=[[1, 1, 1]])
+
         #save initial data
         if save_path is not None:
-            self.diff_tex.img_save(save_path=save_path + f"/tex_initial.png", width=tex_size, height=tex_size)
+            if not field_sample:
+                self.diff_tex.img_save(save_path=save_path + f"/tex_initial.png", width=tex_size, height=tex_size)
             img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, offset=offset, elev=25, 
-                                                          light_enable=render_light_enable, dist=dist_range[1])
+                                                          light_enable=render_light_enable, dist=dist_range[1],
+                                                          field_sample=field_sample)
             
             for count, img_tensor in enumerate(img_tensor_list):
                 #latent to RGB
@@ -69,7 +78,8 @@ class TextureGenerator:
                 plt.imsave(save_path + f"/initial_{count}.png", img_array)
             del img_tensor_list
         
-        optimizer = torch.optim.Adam(self.diff_tex.parameters(), lr=lr)
+        #optimizer = torch.optim.Adam(self.diff_tex.parameters(), lr=lr)
+        optimizer = torch.optim.AdamW(self.diff_tex.parameters(), lr=lr, betas=(0.9, 0.99), eps=1e-15)
         guidance = StableDiffusion(device=self.device)
         guidance.eval()
         text_embeddings = guidance.get_text_embeds(text_prompt, '')
@@ -93,19 +103,20 @@ class TextureGenerator:
             randint = torch.randint(0, 13, size=(2, ))
             rand_render = torch.randint(0, 2, size=(2, ))
 
-            bool_list = [True, False]
+            bool_list = [False, False]
 
             dist = rand[0] * (dist_range[1] - dist_range[0]) + dist_range[0]
-            #elev = rand[1] * (elev_range[1] - elev_range[0]) + elev_range[0]
-            #azim = rand[2] * (azim_range[1] - azim_range[0]) + azim_range[0]
-            elev = 30 * randint[0] / 2
-            azim = 30 * randint[1]
+            elev = rand[1] * (elev_range[1] - elev_range[0]) + elev_range[0]
+            azim = rand[2] * (azim_range[1] - azim_range[0]) + azim_range[0]
+            #elev = 30 * randint[0] / 2
+            #azim = 30 * randint[1]
             #azim = 90.0
             self.renderer.camera_setting(dist=dist, elev=elev, azim=azim, offset=offset)
             pred_tensor = self.renderer.rendering(self.mesh_data, self.diff_tex, 
                                                   light_enable=render_light_enable, rand_back=True, 
                                                   depth_render=bool_list[rand_render[0]],
-                                                  depth_value_inverse=bool_list[rand_render[1]]
+                                                  depth_value_inverse=bool_list[rand_render[1]],
+                                                  field_sample=field_sample
                                                   )[:, :, :, 0:-1]
 
             # save mediate results
@@ -120,7 +131,8 @@ class TextureGenerator:
                 img_array = img_tensor[0, :, :, :].cpu().detach().numpy()
                 img_array = np.clip(img_array, 0, 1)
                 plt.imsave(save_path + f"/ep_{epoch+1}.png", img_array)
-                self.diff_tex.img_save(save_path=save_path + f"/tex_ep_{epoch+1}.png", width=tex_size, height=tex_size)
+                if not field_sample:
+                    self.diff_tex.img_save(save_path=save_path + f"/tex_ep_{epoch+1}.png", width=tex_size, height=tex_size)
 
             pred_tensor = pred_tensor.permute(0, 3, 1, 2)
 
@@ -150,9 +162,11 @@ class TextureGenerator:
         del guidance
         
         if save_path is not None:
-            self.diff_tex.img_save(save_path=save_path + f"/tex_result.png")
+            if not field_sample:
+                self.diff_tex.img_save(save_path=save_path + f"/tex_result.png")
             img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, offset=offset, elev=25,
-                                                           light_enable=render_light_enable, dist=dist_range[1])
+                                                           light_enable=render_light_enable, dist=dist_range[1],
+                                                           field_sample=field_sample)
 
             for count, img_tensor in enumerate(img_tensor_list):
                 #latent to RGB
@@ -175,27 +189,27 @@ def main():
 
     seed_everything(0)
 
-    mesh_path = "./Assets/3D_Model/Nascar/mesh.obj"
-    text_prompt = "a next gen of nascar"
-    save_path = "./Experiments/Generative_Texture_MLP/Nascar/test1"
+    mesh_path = "./Assets/3D_Model/Pineapple/mesh.obj"
+    text_prompt = "a pineapple"
+    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/test2"
     mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent/latent_noise.pth"
     #mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent_64/nth.pth"
 
-    diff_tex = DiffTexture(size=(256, 256), is_latent=True)
+    #diff_tex = DiffTexture(size=(256, 256), is_latent=True)
 
-    #diff_tex = NeuralTextureField(width=32, depth=6, pe_enable=True)
-    diff_tex.tex_load(tex_path=mlp_path)
+    diff_tex = NeuralTextureField(width=32, depth=2, pe_enable=True, input_dim=3)
+    #diff_tex.tex_load(tex_path=mlp_path)
 
-    img_size=64
+    img_size=512
     tex_size=512
 
     texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=diff_tex, is_latent=False)
 
-    #recomanded lr: mlp 256x6 --- 0.00001, mlp 32x6 --- 0.0001, 
-    texture_generator.texture_train(text_prompt=text_prompt, lr=0.0001, epochs=4000, save_path=save_path, 
-                                    dist_range=[1.0, 1.0], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
-                                    info_update_period=100, render_light_enable=True, tex_size=tex_size, 
-                                    rendered_img_size=img_size)
+    #recomanded lr: mlp 256x6 --- 0.00001, mlp 32x6 --- 0.0001, 32x1 --- 0.01
+    texture_generator.texture_train(text_prompt=text_prompt, lr=0.001, epochs=100000, save_path=save_path, 
+                                    dist_range=[1.1, 1.1], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
+                                    info_update_period=2000, render_light_enable=True, tex_size=tex_size, 
+                                    rendered_img_size=img_size, annealation=True, field_sample=True)
 
 if __name__ == "__main__":
     main()
