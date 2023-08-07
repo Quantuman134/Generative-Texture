@@ -46,10 +46,23 @@ class NeuralTextureField(nn.Module):
         layers = []
         
         if pe_enable:
-            pe = PositionEncoding(input_dim=input_dim)
+            #pe = PositionEncoding(input_dim=input_dim) #fraquency encoding
+            desired_resolution = 4096
+            num_levels = 16
+            base_grid_resolution = 16
+            per_level_scale = np.exp(np.log(desired_resolution / base_grid_resolution) / (num_levels-1))
+            encoding_config = {
+                "otype": "HashGrid",
+                "n_levels": num_levels,
+                "n_features_per_level": 2,
+                "log2_hashmap_size": 19,
+                "base_resolution": base_grid_resolution,
+                "per_level_scale" : per_level_scale                
+            }
+            pe = tcnn.Encoding(input_dim, encoding_config, dtype=torch.float32)
             layers.append(pe)
-            #layers.append(nn.ReLU())
-            layers.append(nn.Linear(pe.mapping_size, width, bias=False))
+            #layers.append(nn.Linear(pe.mapping_size, width, bias=False))
+            layers.append(nn.Linear(pe.n_output_dims, width, bias=False))
         else:
             layers.append(nn.Linear(input_dim, width, bias=False))  
 
