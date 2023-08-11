@@ -109,8 +109,6 @@ class StableDiffusion(nn.Module):
         self.max_step = int(self.num_train_timesteps * max_t)
         t = torch.randint(self.min_step, self.max_step + 1, [1], dtype=torch.long, device=self.device)
 
-
-
         # predict the noise residual with unet, NO grad!
         with torch.no_grad():
             # add noise

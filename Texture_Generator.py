@@ -189,15 +189,15 @@ def main():
 
     seed_everything(0)
 
-    mesh_path = "./Assets/3D_Model/Pineapple/mesh.obj"
-    text_prompt = "a pineapple"
-    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/2d_32"
+    mesh_path = "./Assets/3D_Model/Nascar/mesh.obj"
+    text_prompt = "a next gen of nascar"
+    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/test3"
     mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent/latent_noise.pth"
     #mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent_64/nth.pth"
 
     #diff_tex = DiffTexture(size=(256, 256), is_latent=True)
 
-    diff_tex = NeuralTextureField(width=256, depth=2, pe_enable=True, input_dim=2)
+    diff_tex = NeuralTextureField(width=32, depth=2, pe_enable=True, input_dim=2)
     #diff_tex.tex_load(tex_path=mlp_path)
 
     img_size=512
@@ -205,8 +205,8 @@ def main():
 
     texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=diff_tex, is_latent=False)
 
-    #recomanded lr: mlp 256x6 --- 0.0001, mlp 32x6 --- 0.0001, 32x2 --- 0.005
-    texture_generator.texture_train(text_prompt=text_prompt, lr=0.005, epochs=4000, save_path=save_path, 
+    #recomanded lr: mlp 256x6 --- 0.0001, 256x2 --- 0.003 mlp 32x6 --- 0.001, 32x2 --- 0.005/0.01
+    texture_generator.texture_train(text_prompt=text_prompt, lr=0.01, epochs=4000, save_path=save_path, 
                                     dist_range=[1.1, 1.1], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
                                     info_update_period=100, render_light_enable=True, tex_size=tex_size, 
                                     rendered_img_size=img_size, annealation=True, field_sample=False)
