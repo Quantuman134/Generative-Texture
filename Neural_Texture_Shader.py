@@ -10,6 +10,7 @@ from pytorch3d.structures.utils import padded_to_list
 from pytorch3d.ops import interpolate_face_attributes
 import torch
 from pytorch3d.structures.meshes import Meshes
+from BRDF import brdf_shading
 
 class NeuralTextureShader(shader.ShaderBase):
     """
@@ -27,7 +28,8 @@ class NeuralTextureShader(shader.ShaderBase):
         rand_back = False,
         depth_render = False,
         depth_value_inverse = False,
-        field_sample = False
+        field_sample = False,
+        shading_method = 'phong' #phong or brdf
         ):
         super().__init__(device, cameras, lights, materials, blend_params)
         self.diff_tex = diff_tex
@@ -40,6 +42,7 @@ class NeuralTextureShader(shader.ShaderBase):
         self.depth_render = depth_render
         self.depth_value_inverse = depth_value_inverse
         self.field_sample = field_sample
+        self.shading_method = shading_method
 
     def forward(self, fragments: Fragments, meshes: Meshes, **kwargs) -> torch.Tensor:
         cameras = super()._get_cameras(**kwargs)
@@ -61,24 +64,36 @@ class NeuralTextureShader(shader.ShaderBase):
         #print("texels:",texels.size())
         #print("test:",test.size())
 
-
         lights = kwargs.get("lights", self.lights)
         materials = kwargs.get("materials", self.materials)
         blend_params = kwargs.get("blend_params", self.blend_params)
         #print(texels.size())
         if self.light_enable:
+            if self.shading_method == 'phong':
             #do not support rendering in latent space
-            colors = shader.phong_shading(
-                meshes=meshes,
-                fragments=fragments,
-                texels=texels[:, :, :, :, 0:3],
-                lights=lights,
-                cameras=cameras,
-                materials=materials
-            )
+                colors = shader.phong_shading(
+                    meshes=meshes,
+                    fragments=fragments,
+                    texels=texels[:, :, :, :, 0:3],
+                    lights=lights,
+                    cameras=cameras,
+                    materials=materials
+                )
+            elif self.shading_method == 'brdf':
+                colors = brdf_shading(
+                    meshes=meshes,
+                    fragments=fragments,
+                    texels=texels[:, :, :, :, 0:8],
+                    lights=lights,
+                    cameras=cameras,
+                    materials=materials
+                )
+            else:
+                colors = texels
 
         else:
             colors = texels # no lighting
+
         znear = kwargs.get("znear", getattr(cameras, "znear", 1.0))
         zfar = kwargs.get("zfar", getattr(cameras, "zfar", 100.0))
         images = self.softmax_rgb_blend_custom(
@@ -113,8 +128,6 @@ class NeuralTextureShader(shader.ShaderBase):
         texels[:, :, :, :, 0] = z
         texels[:, :, :, :, 1] = z
         texels[:, :, :, :, 2] = z
-        #print(texels[:, :, :, :, 2].size())
-        #texels[texels<0] == 0
 
         return texels
 
@@ -193,6 +206,9 @@ class NeuralTextureShader(shader.ShaderBase):
 
         if colors.size()[1] == 3:
             colors = (colors + 1) / 2
+        elif colors.size()[1] == 8:
+            colors[:, 0:5] = (colors[:, 0:5] + 1) / 2
+
         colors = colors.reshape(N, H, W, colors.size()[1])
         texels = colors.unsqueeze(3).repeat(1, 1, 1, K, 1)
         return texels 
@@ -204,9 +220,7 @@ class NeuralTextureShader(shader.ShaderBase):
         ]
         faces_verts_uvs = torch.cat(packing_list)
 
-        #ave_bary_coords = torch.ones_like(fragments.bary_coords) * (1.0/3)
         pixel_uvs = interpolate_face_attributes(fragments.pix_to_face, fragments.bary_coords, faces_verts_uvs).reshape(-1, 2) #range [0, 1]
-        #pixel_uvs = interpolate_face_attributes(fragments.pix_to_face, ave_bary_coords, faces_verts_uvs).reshape(-1, 2) #range [0, 1]
 
         pixel_uvs = pixel_uvs * 2.0 - 1.0 #range [-1, 1]
         temps = pixel_uvs[:, 0].clone()
@@ -215,8 +229,9 @@ class NeuralTextureShader(shader.ShaderBase):
         colors = self.diff_tex(pixel_uvs)
         if colors.size()[1] == 3:
             colors = (colors + 1) / 2
+        elif colors.size()[1] == 8:
+            colors[:, 0:5] = (colors[:, 0:5] + 1) / 2
         colors = colors.reshape(N, H, W, colors.size()[1])
-        #print(colors[256, 256, :])
         texels = colors.unsqueeze(3).repeat(1, 1, 1, K, 1)
         return texels 
 
@@ -226,11 +241,8 @@ class NeuralTextureShader(shader.ShaderBase):
             i[j] for i, j in zip([self.aux.verts_uvs.to(self.device)], [self.faces.textures_idx.to(self.device)])
         ]
         faces_verts_uvs = torch.cat(packing_list)
-
-        #ave_bary_coords = torch.ones_like(fragments.bary_coords) * (1.0/3)
         pixel_uvs = interpolate_face_attributes(fragments.pix_to_face, fragments.bary_coords, faces_verts_uvs).reshape(-1, 2) #range [0, 1]
-        #pixel_uvs = interpolate_face_attributes(fragments.pix_to_face, ave_bary_coords, faces_verts_uvs).reshape(-1, 2) #range [0, 1]
-
+    
         pixel_uvs = pixel_uvs * 2.0 - 1.0 #range [-1, 1]
         temps = pixel_uvs[:, 0].clone()
         pixel_uvs[:, 0] = -pixel_uvs[:, 1]
@@ -238,6 +250,8 @@ class NeuralTextureShader(shader.ShaderBase):
         colors = self.diff_tex(pixel_uvs)
         if colors.size()[1] == 3:
             colors = (colors + 1) / 2
+        elif colors.size()[1] == 8:
+            colors[:, 0:5, :, :] = (colors[:, 0:5, :, :] + 1) / 2
         colors = colors.reshape(N, H, W, colors.size()[1])
         #print(colors[256, 256, :])
         texels = colors.unsqueeze(3).repeat(1, 1, 1, K, 1)

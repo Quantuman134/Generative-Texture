@@ -25,6 +25,7 @@ class TextureGenerator:
 
         verts_list = mesh_obj.verts_list()
         verts_list[:] = [(verts_obj - center)/max_length for verts_obj in verts_list]
+        mesh_obj._verts_packed = (verts_packed - center)/max_length
     
         verts = (verts - center)/max_length
 

@@ -12,7 +12,9 @@ class NeuralTextureRenderer:
         self.light_setting()
 
     # rendered image: tensor[N, H, W, 4], N: image number, 4: RGBA
-    def rendering(self, mesh_data, diff_tex, light_enable=False, rand_back=False, depth_render=False, depth_value_inverse=False, field_sample=False):
+    def rendering(self, mesh_data, diff_tex, light_enable=False, rand_back=False, 
+                  depth_render=False, depth_value_inverse=False, field_sample=False,
+                  shading_method='phong'):
         mesh_renderer = renderer.MeshRenderer(
             rasterizer=renderer.MeshRasterizer(
                 cameras=self.cameras,
@@ -28,7 +30,8 @@ class NeuralTextureRenderer:
                 rand_back=rand_back,
                 depth_render=depth_render,
                 depth_value_inverse=depth_value_inverse,
-                field_sample=field_sample
+                field_sample=field_sample,
+                shading_method=shading_method
             )
         )
 
@@ -45,11 +48,11 @@ class NeuralTextureRenderer:
     def light_setting(self, directions=[[1.0, 1.0, 1.0]]):
         self.lights = renderer.DirectionalLights(direction=directions, device=self.device)
     
-    def render_around(self, mesh_data, diff_tex, dist=2.5, elev=45, offset=torch.tensor([[0, 0, 0]]), light_enable=False , rand_back=False, depth_render=False, depth_value_inverse=False, field_sample=False):
+    def render_around(self, mesh_data, diff_tex, dist=2.5, elev=45, offset=torch.tensor([[0, 0, 0]]), light_enable=False , rand_back=False, depth_render=False, depth_value_inverse=False, field_sample=False, shading_method='phong'):
         image_tensor_list = []
         for azim in range(0, 360, 45):
             self.camera_setting(dist=dist, elev=elev, azim=azim, offset=offset)
-            image_tensor = self.rendering(mesh_data, diff_tex, light_enable=light_enable, rand_back=rand_back, depth_render=depth_render, depth_value_inverse=depth_value_inverse, field_sample=field_sample)
+            image_tensor = self.rendering(mesh_data, diff_tex, light_enable=light_enable, rand_back=rand_back, depth_render=depth_render, depth_value_inverse=depth_value_inverse, field_sample=field_sample, shading_method=shading_method)
             image_tensor_list.append(image_tensor)
         
         return image_tensor_list
@@ -67,7 +70,7 @@ def main():
 
     renderer = NeuralTextureRenderer()
     #mesh_path = "./Assets/3D_Model/Basketball/basketball.obj"
-    mesh_path = "./Assets/3D_Model/Pineapple/mesh.obj"
+    mesh_path = "./Assets/3D_Model/Pony_Car/source/Pony_Car.obj"
     image_path = "./Assets/3D_Model/Nascar/albedo.png"
     save_path = "./temp"
     mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent/latent_noise.pth"
@@ -79,7 +82,7 @@ def main():
     #diff_tex.set_image(image_tensor)
 
     # mlp texture
-    diff_tex = NeuralTextureField(width=32, depth=2, input_dim=3)
+    diff_tex = NeuralTextureField(width=32, depth=2, input_dim=3, brdf=True)
     #diff_tex.tex_load(mlp_path)
 
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
@@ -92,6 +95,7 @@ def main():
 
     verts_list = mesh_obj.verts_list()
     verts_list[:] = [(verts_obj - center)/max_length for verts_obj in verts_list] #[-0.5, 0.5]
+    mesh_obj._verts_packed = (verts_packed - center)/max_length
 
     verts, faces, aux = io.load_obj(mesh_path, device=device)
     verts = (verts - center)/max_length
@@ -103,18 +107,19 @@ def main():
     renderer.rasterization_setting(image_size=512)
     renderer.light_setting()
 
-    image_tensor = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex, light_enable=True, field_sample=True)
+    image_tensor = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex, light_enable=True, field_sample=True, shading_method='brdf')
     image_array = image_tensor[0, :, :, 0:3].cpu().detach().numpy()
     image_array = np.clip(image_array, 0, 1)
     plt.imshow(image_array)
     plt.show()
 
     image_tensors = renderer.render_around(mesh_data=mesh_data, diff_tex=diff_tex, dist=1.0, offset=offset, elev=0, 
-                                           light_enable=True, depth_render=False, depth_value_inverse=True, field_sample=True)
+                                           light_enable=True, depth_render=False, depth_value_inverse=True, field_sample=True,
+                                           shading_method='brdf')
     for count, image_tensor in enumerate(image_tensors):
         image_array = image_tensor[0, :, :, 0:3].cpu().detach().numpy()
         image_array = np.clip(image_array, 0, 1)
-        plt.imsave(save_path+f"/test_{count}.png", image_array)
+        plt.imsave(save_path+f"/brdf_{count}.png", image_array)
 
 
 #latent space

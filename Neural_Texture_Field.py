@@ -33,7 +33,7 @@ class PositionEncoding(nn.Module):
 # expected_tex_size: expected texture size represented by mlp, used in the forward disturb function
 class NeuralTextureField(nn.Module):
     def __init__(self, width=512, depth=3, input_dim=2, expected_tex_size = 512, 
-                 pe_enable=True, is_latent=False, sampling_disturb=False) -> None:
+                 pe_enable=True, is_latent=False, sampling_disturb=False, brdf=False) -> None:
         super().__init__()
         self.width = width
         self.depth = depth
@@ -43,6 +43,8 @@ class NeuralTextureField(nn.Module):
         self.output_dim = 3
         if is_latent:
             self.output_dim = 4
+        if brdf:
+            self.output_dim = 8
         layers = []
         
         if pe_enable:
@@ -91,10 +93,14 @@ class NeuralTextureField(nn.Module):
             x = layer(x)
         colors = x
 
-        colors = torch.clamp(colors, -1, 1)
+        if self.output_dim == 8:
+            colors[:, 0:5] = torch.clamp(colors[:, 0:5], -1, 1)
+        else:
+            colors = torch.clamp(colors, -1, 1)
+
         return colors
     
-
+    # temporarily disable in brdf
     def render_img(self, height=512, width=512):
         #only support one RGB image rendering now 
         #output: 'latent' or 'rgb', latent: expected output range [-1, 1], rgb: expected output range [0, 1]
@@ -114,6 +120,7 @@ class NeuralTextureField(nn.Module):
         img_tensor = img_tensor.reshape(1, height, width, self.output_dim).permute(0, 3, 1, 2).contiguous()
         return img_tensor
     
+    # temporarily disable in brdf
     def img_show(self, height=512, width=512):
         img_tensor = self.render_img(height, width)[:, 0:3, :, :]
         img_array = img_tensor.squeeze(0).permute(1, 2, 0).cpu().detach().numpy()
@@ -121,6 +128,7 @@ class NeuralTextureField(nn.Module):
         plt.imshow(img_array)
         plt.show()
     
+    # temporarily disable in brdf
     def img_save(self, save_path, height=512, width=512, rgb=True):
         img_tensor = self.render_img(height, width)
         if self.is_latent and rgb:
