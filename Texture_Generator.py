@@ -47,7 +47,11 @@ class TextureGenerator:
                       elev_range=[0.0, 360.0], azim_range=[0.0, 360.0],
                       info_update_period=500, render_light_enable=False,
                       tex_size=512, rendered_img_size=512, annealation=False,
-                      field_sample=False):
+                      field_sample=False, brdf=False):
+        if brdf:
+            shading_method = 'brdf'
+        else:
+            shading_method = 'phong'
 
         # highlight: a temp code line, normal is 512
         self.renderer.rasterization_setting(image_size=rendered_img_size)
@@ -58,15 +62,17 @@ class TextureGenerator:
         offset = torch.tensor([offset])
 
         # light setting
-        self.renderer.light_setting(directions=[[1, 1, 1]])
+        #self.renderer.light_setting(directions=[[1, 1, 1]])
+        self.renderer.light_setting(directions=[[-1.0, -1.0, -1.0], [-1.0, -1.0, 1.0], [-1.0, 1.0, -1.0], [-1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [1.0, -1.0, 1.0], [1.0, 1.0, -1.0], [1.0, 1.0, 1.0]], 
+                           intensities=[0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7], multi_lights=True)
 
         #save initial data
         if save_path is not None:
-            if not field_sample:
+            if not (field_sample or brdf):
                 self.diff_tex.img_save(save_path=save_path + f"/tex_initial.png", width=tex_size, height=tex_size)
             img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, offset=offset, elev=25, 
                                                           light_enable=render_light_enable, dist=dist_range[1],
-                                                          field_sample=field_sample)
+                                                          field_sample=field_sample, shading_method=shading_method)
             
             for count, img_tensor in enumerate(img_tensor_list):
                 #latent to RGB
@@ -117,7 +123,7 @@ class TextureGenerator:
                                                   light_enable=render_light_enable, rand_back=False, 
                                                   depth_render=bool_list[rand_render[0]],
                                                   depth_value_inverse=bool_list[rand_render[1]],
-                                                  field_sample=field_sample
+                                                  field_sample=field_sample, shading_method=shading_method
                                                   )[:, :, :, 0:-1]
 
             # save mediate results
@@ -132,7 +138,7 @@ class TextureGenerator:
                 img_array = img_tensor[0, :, :, :].cpu().detach().numpy()
                 img_array = np.clip(img_array, 0, 1)
                 plt.imsave(save_path + f"/ep_{epoch+1}.png", img_array)
-                if not field_sample:
+                if not (field_sample or brdf):
                     self.diff_tex.img_save(save_path=save_path + f"/tex_ep_{epoch+1}.png", width=tex_size, height=tex_size)
 
             pred_tensor = pred_tensor.permute(0, 3, 1, 2)
@@ -163,11 +169,11 @@ class TextureGenerator:
         del guidance
         
         if save_path is not None:
-            if not field_sample:
+            if not (field_sample or brdf):
                 self.diff_tex.img_save(save_path=save_path + f"/tex_result.png")
             img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, offset=offset, elev=25,
                                                            light_enable=render_light_enable, dist=dist_range[1],
-                                                           field_sample=field_sample)
+                                                           field_sample=field_sample, shading_method=shading_method)
 
             for count, img_tensor in enumerate(img_tensor_list):
                 #latent to RGB
@@ -192,13 +198,14 @@ def main():
 
     mesh_path = "./Assets/3D_Model/Nascar/mesh.obj"
     text_prompt = "a next gen of nascar"
-    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/test3"
+    save_path = "./Experiments/Generative_Texture_MLP/Nascar/test4"
     mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent/latent_noise.pth"
     #mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent_64/nth.pth"
+    brdf = True
 
     #diff_tex = DiffTexture(size=(256, 256), is_latent=True)
 
-    diff_tex = NeuralTextureField(width=32, depth=2, pe_enable=True, input_dim=2)
+    diff_tex = NeuralTextureField(width=32, depth=2, pe_enable=True, input_dim=3, brdf=brdf)
     #diff_tex.tex_load(tex_path=mlp_path)
 
     img_size=512
@@ -207,11 +214,13 @@ def main():
     texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=diff_tex, is_latent=False)
 
     #recomanded lr: mlp 256x6 --- 0.0001, 256x2 --- 0.003 mlp 32x6 --- 0.001, 32x2 --- 0.005/0.01
-    texture_generator.texture_train(text_prompt=text_prompt, lr=0.01, epochs=4000, save_path=save_path, 
-                                    dist_range=[1.1, 1.1], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
-                                    info_update_period=100, render_light_enable=True, tex_size=tex_size, 
-                                    rendered_img_size=img_size, annealation=True, field_sample=False)
+    texture_generator.texture_train(text_prompt=text_prompt, lr=0.01, epochs=100000, save_path=save_path, 
+                                    dist_range=[1.2, 1.2], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
+                                    info_update_period=2500, render_light_enable=True, tex_size=tex_size, 
+                                    rendered_img_size=img_size, annealation=True, field_sample=True, brdf=brdf)
 
+
+    
 if __name__ == "__main__":
     main()
         

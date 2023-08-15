@@ -29,17 +29,27 @@ def brdf_shading(
     pixel_normals = interpolate_face_attributes(
         fragments.pix_to_face, fragments.bary_coords, faces_normals
     ) # pixel_normals (1, H, W, 1, 3)
+
     pixel_normals = (pixel_normals + texels[:, :, :, :, 5:8])
+    texels[:, :, :, :, 0:5] = (texels[:, :, :, :, 0:5] + 1) * 0.5
 
-    brdf_data = brdf_data_cal(pixel_normals, pixel_coords_in_camera, lights, cameras, texels)
+    colors = torch.zeros_like(pixel_normals)
 
-    specular = specular_lighting(brdf_data)
-    diffuse = diffuse_lighting(brdf_data)
+    for i in range(lights.num):
+        light = lights.lights[i]
 
-    colors = (1 - Fresnel_cal(brdf_data)) * diffuse + specular
-    #back_light = brdf_data['back_light'].repeat(1, 1, 1, 1, 3)
-    back_lights = back_light(brdf_data).repeat(1, 1, 1, 1, 3)
-    colors[back_lights] = 0.0
+        brdf_data = brdf_data_cal(pixel_normals, pixel_coords_in_camera, light, cameras, texels)
+
+        specular = specular_lighting(brdf_data)
+        diffuse = diffuse_lighting(brdf_data)
+
+        color_layer = (1 - Fresnel_cal(brdf_data)) * diffuse + specular
+        #color_layer = (1 - Fresnel_cal(brdf_data)) * diffuse
+        #color_layer = specular
+
+        back_lights = back_light(brdf_data).repeat(1, 1, 1, 1, 3)
+        color_layer[back_lights] = 0.0
+        colors += color_layer * light.intensity
 
     return colors
 
@@ -75,11 +85,7 @@ def G2_cal(brdf_data):
 
 # Lambert diffuse
 def diffuse_lighting(brdf_data):
-    #diffuse_reflectance = brdf_data['diffuse_reflectance']
     diffuse_reflectance = diffuse_reflectance_cal(brdf_data)
-    
-    #size = brdf_data['image_size']
-    #NdotL = brdf_data['NdotL'].reshape(size + (1, ))
     return diffuse_reflectance * (ONE_OVER_PI * NdotL(brdf_data))
 
 def brdf_data_cal(normals, verts, lights, cameras, texels):
@@ -143,14 +149,14 @@ def specular_alpha_cal(brdf_data):
 
 def view_vec_cal(cameras, verts):
     camera_position = cameras.get_camera_center().squeeze()
-    view = F.normalize((camera_position - verts), dim=1)
+    view = F.normalize((camera_position - verts), dim=4)
     return view
 
 def light_vec_cal(lights):
-    return F.normalize(torch.tensor(lights.direction, dtype=torch.float32, device=device).squeeze(), dim=0) 
+    return F.normalize(-lights.direction, dim=0)
 
 def half_vec_cal(cameras, verts, lights):
-    return F.normalize(view_vec_cal(cameras, verts) + light_vec_cal(lights))
+    return F.normalize(view_vec_cal(cameras, verts) + light_vec_cal(lights), dim=4)
 
 def back_light(brdf_data):
     return (NdotL(brdf_data) <= 0)

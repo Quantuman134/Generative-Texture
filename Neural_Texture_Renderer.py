@@ -2,6 +2,7 @@ from utils import device
 from pytorch3d import renderer
 from Neural_Texture_Shader import NeuralTextureShader
 import torch
+from Multi_Directional_Lights import MultiDirectionalLights
 
 class NeuralTextureRenderer:
     def __init__(self, offset=[0.0, 0.0, 0.0]) -> None:
@@ -45,8 +46,10 @@ class NeuralTextureRenderer:
     def rasterization_setting(self, image_size=512, blur_radius=0.0, face_per_pixel=1):
         self.raster_setting = renderer.RasterizationSettings(image_size=image_size, blur_radius=blur_radius, faces_per_pixel=face_per_pixel)
 
-    def light_setting(self, directions=[[1.0, 1.0, 1.0]]):
+    def light_setting(self, directions=[[1.0, 1.0, 1.0]], intensities = [1.0], multi_lights=False):
         self.lights = renderer.DirectionalLights(direction=directions, device=self.device)
+        if multi_lights:
+            self.lights = MultiDirectionalLights(directions=directions, intensities=intensities, device=device)
     
     def render_around(self, mesh_data, diff_tex, dist=2.5, elev=45, offset=torch.tensor([[0, 0, 0]]), light_enable=False , rand_back=False, depth_render=False, depth_value_inverse=False, field_sample=False, shading_method='phong'):
         image_tensor_list = []
@@ -105,7 +108,8 @@ def main():
     offset = torch.tensor([0, 0, 0])
     renderer.camera_setting(dist=1.1, elev=0, azim=0, offset=offset)
     renderer.rasterization_setting(image_size=512)
-    renderer.light_setting()
+    renderer.light_setting(directions=[[-1.0, -1.0, -1.0], [-1.0, -1.0, 1.0], [-1.0, 1.0, -1.0], [-1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [1.0, -1.0, 1.0], [1.0, 1.0, -1.0], [1.0, 1.0, 1.0]], 
+                           intensities=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], multi_lights=True)
 
     image_tensor = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex, light_enable=True, field_sample=True, shading_method='brdf')
     image_array = image_tensor[0, :, :, 0:3].cpu().detach().numpy()

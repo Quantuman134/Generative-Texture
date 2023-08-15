@@ -82,7 +82,7 @@ class NeuralTextureField(nn.Module):
         print(self.base)
         
     def reset_weights(self):
-        self.base[-1].weight.data = torch.ones_like(self.base[-1].weight.data) * 0.5
+        self.base[-1].weight.data = torch.ones_like(self.base[-1].weight.data) * 0.0
         #self.base[-1].bias.data = torch.randn_like(self.base[-1].bias.data)
 
     def forward(self, x):
@@ -92,12 +92,12 @@ class NeuralTextureField(nn.Module):
         for layer in self.base:
             x = layer(x)
         colors = x
-
+        
+        
         if self.output_dim == 8:
-            colors[:, 0:5] = torch.clamp(colors[:, 0:5], -1, 1)
+            colors = torch.clamp(colors, -1, 1)
         else:
             colors = torch.clamp(colors, -1, 1)
-
         return colors
     
     # temporarily disable in brdf

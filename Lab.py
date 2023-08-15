@@ -18,14 +18,9 @@ def main():
     plt.imshow(image_array)
     plt.show()
 def main_2():
-    a = torch.tensor([[1, 2, 3], [2, 3, 4]])
-    b = a.reshape(1, -1)
-    b[0, 0] = 5
+    a = None
+    a += 1
     print(a)
-    print(b)
-    print(a[:,1].unsqueeze(1))
-    print(a.unsqueeze(2))
-    print(a.unsqueeze(2).size())
 
 if __name__ == "__main__":
     main_2()
