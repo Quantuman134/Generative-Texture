@@ -126,7 +126,7 @@ class StableDiffusion(nn.Module):
         w = (1 - self.alphas[t])
         # w = self.alphas[t] ** 0.5 * (1 - self.alphas[t])
         grad = w * (noise_pred - noise)
-        
+
         #peseudo-loss
         p_loss = torch.sqrt(torch.mean(torch.pow((noise_pred - noise), 2))).item()
 
@@ -332,3 +332,4 @@ def main_2():
 
 if __name__ == '__main__':
     main_2()
+    # test
