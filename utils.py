@@ -65,3 +65,32 @@ def encode_latents(imgs):
 
     return latents
 
+def read_obj(file_path):
+    vertices = []
+    with open(file_path, 'r') as f:
+        for line in f:
+            if line.startswith('v '):
+                vertex = [float(coord) for coord in line.split()[1:]]
+                vertices.append(vertex)
+    return torch.tensor(vertices, dtype=torch.float32)
+
+def write_obj(file_path, vertices):
+    with open(file_path, 'w') as f:
+        for vertex in vertices:
+            f.write(f'v {vertex[0]} {vertex[1]} {vertex[2]}\n')
+
+def vert_normalize(in_path, out_path):
+    vert_tensor = read_obj(in_path)
+    vert_max, _ = vert_tensor.max(dim=0)
+    vert_min, _ = vert_tensor.min(dim=0)
+    max_length = torch.max(vert_max - vert_min)
+    center = (vert_max + vert_min) * 0.5
+    vert_tensor = (vert_tensor - center)/max_length * 2
+    write_obj(out_path, vert_tensor)
+    print(f'Converted and saved {len(vert_tensor)} vertices to {output_file}')
+
+if __name__ == '__main__':
+    input_file = './Assets/3D_Model/Table/mesh.obj'
+    output_file = './Assets/3D_Model/Table/new_mesh.obj'
+
+    vert_normalize(input_file, output_file)

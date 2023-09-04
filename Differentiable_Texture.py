@@ -50,6 +50,12 @@ class DiffTexture(nn.Module):
             return color
         else:
             colors = self.texture_batch_sample(uvs)
+            
+            # test code
+            normals = torch.zeros_like(colors)
+            materials = torch.ones_like(colors)
+            
+            # test end
             return colors
     
     def texture_sample(self, uv):

@@ -73,24 +73,25 @@ def main():
 
     renderer = NeuralTextureRenderer()
     #mesh_path = "./Assets/3D_Model/Basketball/basketball.obj"
-    mesh_path = "./Assets/3D_Model/Pony_Car/source/Pony_Car.obj"
-    image_path = "./Assets/3D_Model/Nascar/albedo.png"
-    save_path = "./temp"
+    mesh_path = "./Assets/3D_Model/Cow/cow.obj"
+    image_path = "./Assets/3D_Model/Cow/cow_texture.png"
+    save_path = "./Experiments/BRDF_test/test1"
     mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent/latent_noise.pth"
 
     # differentiable texture
-    #diff_tex = DiffTexture(size=(512, 512), is_latent=False)
-    #image = Image.open(image_path)
-    #image_tensor = transforms.ToTensor()(image).unsqueeze(0)
-    #diff_tex.set_image(image_tensor)
+    diff_tex = DiffTexture(size=(512, 512), is_latent=False)
+    image = Image.open(image_path)
+    image_tensor = transforms.ToTensor()(image).unsqueeze(0)
+    diff_tex.set_image(image_tensor)
 
     # mlp texture
-    diff_tex = NeuralTextureField(width=32, depth=2, input_dim=3, brdf=True)
+    #diff_tex = NeuralTextureField(width=32, depth=2, input_dim=3, brdf=True)
     #diff_tex.tex_load(mlp_path)
 
     mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
 
     verts_packed = mesh_obj.verts_packed()
+    
     verts_max = verts_packed.max(dim=0).values
     verts_min = verts_packed.min(dim=0).values
     max_length = (verts_max - verts_min).max().item()
@@ -108,18 +109,18 @@ def main():
     offset = torch.tensor([0, 0, 0])
     renderer.camera_setting(dist=1.1, elev=0, azim=0, offset=offset)
     renderer.rasterization_setting(image_size=512)
-    renderer.light_setting(directions=[[-1.0, -1.0, -1.0], [-1.0, -1.0, 1.0], [-1.0, 1.0, -1.0], [-1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [1.0, -1.0, 1.0], [1.0, 1.0, -1.0], [1.0, 1.0, 1.0]], 
-                           intensities=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], multi_lights=True)
+    #renderer.light_setting(directions=[[-1.0, -1.0, -1.0], [-1.0, -1.0, 1.0], [-1.0, 1.0, -1.0], [-1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [1.0, -1.0, 1.0], [1.0, 1.0, -1.0], [1.0, 1.0, 1.0]], 
+    #                       intensities=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], multi_lights=True)
 
-    image_tensor = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex, light_enable=True, field_sample=True, shading_method='brdf')
+    image_tensor = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex, light_enable=True, field_sample=True, shading_method='phong')
     image_array = image_tensor[0, :, :, 0:3].cpu().detach().numpy()
     image_array = np.clip(image_array, 0, 1)
     plt.imshow(image_array)
     plt.show()
 
     image_tensors = renderer.render_around(mesh_data=mesh_data, diff_tex=diff_tex, dist=1.0, offset=offset, elev=0, 
-                                           light_enable=True, depth_render=False, depth_value_inverse=True, field_sample=True,
-                                           shading_method='brdf')
+                                           light_enable=True, depth_render=False, depth_value_inverse=True, field_sample=False,
+                                           shading_method='phong')
     for count, image_tensor in enumerate(image_tensors):
         image_array = image_tensor[0, :, :, 0:3].cpu().detach().numpy()
         image_array = np.clip(image_array, 0, 1)

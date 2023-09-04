@@ -95,7 +95,7 @@ class StableDiffusion(nn.Module):
 
 
     def train_step(self, pred_tensor, text_embeddings=None, guidance_scale=100, min_t=0.02, max_t=0.98, detailed=False, latent_input=False):
-        
+
         # interp to 512x512 to be fed into vae.
         if latent_input:
             latents = pred_tensor

@@ -31,7 +31,7 @@ def brdf_shading(
     ) # pixel_normals (1, H, W, 1, 3)
 
     pixel_normals = (pixel_normals + texels[:, :, :, :, 5:8])
-    texels[:, :, :, :, 0:5] = (texels[:, :, :, :, 0:5] + 1) * 0.5
+    #texels[:, :, :, :, 0:5] = (texels[:, :, :, :, 0:5] + 1) * 0.5
 
     colors = torch.zeros_like(pixel_normals)
 
