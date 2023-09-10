@@ -272,7 +272,7 @@ def main_2():
     guidance = StableDiffusion(device=device)
     seed = 0
     utils.seed_everything(seed)
-    guidance_scale = 100
+    guidance_scale = 100 #100
     lr = 0.005
     epochs = 1000
     text_prompt = "an orange cat head"
@@ -332,4 +332,3 @@ def main_2():
 
 if __name__ == '__main__':
     main_2()
-    # test

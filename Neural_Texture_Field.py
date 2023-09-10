@@ -76,14 +76,29 @@ class NeuralTextureField(nn.Module):
         layers.append(nn.Linear(width, self.output_dim, bias=False))
         self.base = nn.ModuleList(layers)
 
-        self.reset_weights()
+        #self.reset_weights()
         self.to(device)
         print("[NEURAL TEXTURE INFO:]")
         print(self.base)
+        #print(self.base[0:])
         
     def reset_weights(self):
-        self.base[-1].weight.data = torch.ones_like(self.base[-1].weight.data) * 0.0
-        #self.base[-1].bias.data = torch.randn_like(self.base[-1].bias.data)
+        if self.pe_enable:
+            #self.base[0:].weight.data = torch.ones_like(self.base[0:].weight.data) * 0.0
+            #self.base[1:].bias.data = torch.randn_like(self.base[-1].bias.data) * 0.0
+
+            #magic code
+            self.base[1].weight.data = torch.ones_like(self.base[1].weight.data) * 0.0
+            #self.base[3].bias.data = torch.ones_like(self.base[3].bias.data) * 0.0
+            self.base[3].weight.data = torch.ones_like(self.base[3].weight.data) * 0.0
+            #self.base[3].bias.data = torch.ones_like(self.base[3].bias.data) * 0.0
+            #self.base[3].bias.data[0: 3] += 0.8
+            #self.base[3].bias.data[3] -= 0.8
+            #self.base[3].bias.data[4] += 0.8
+            ##############
+        else:
+            self.base[0:].weight.data = torch.ones_like(self.base[0:].weight.data) * 0.0
+            #self.base[0:].bias.data = torch.randn_like(self.base[-1].bias.data) * 0.0
 
     def forward(self, x):
         if self.sampling_disturb:
@@ -95,9 +110,9 @@ class NeuralTextureField(nn.Module):
         
         
         if self.output_dim == 8:
-            colors = torch.clamp(colors, -1, 1)
+            colors = torch.clamp(colors, -0.95, 0.95)
         else:
-            colors = torch.clamp(colors, -1, 1)
+            colors = torch.clamp(colors, -0.95, 0.95)
         return colors
     
     # temporarily disable in brdf

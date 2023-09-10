@@ -43,6 +43,7 @@ class NeuralTextureShader(shader.ShaderBase):
         self.depth_value_inverse = depth_value_inverse
         self.field_sample = field_sample
         self.shading_method = shading_method
+        self.device = device
 
     def forward(self, fragments: Fragments, meshes: Meshes, **kwargs) -> torch.Tensor:
         cameras = super()._get_cameras(**kwargs)
