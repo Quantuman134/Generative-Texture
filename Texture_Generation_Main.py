@@ -1,5 +1,13 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"]="0,1,2,3"
+
+#proxy = 'http://127.0.0.1:7890'
+
+#os.environ['http_proxy'] = proxy 
+#os.environ['HTTP_PROXY'] = proxy
+#os.environ['https_proxy'] = proxy
+#os.environ['HTTPS_PROXY'] = proxy
+
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -39,8 +47,8 @@ def main(rank, world_size):
 
     # input configuration
     mesh_path = "./Assets/3D_Model/Pineapple/mesh.obj"
-    text_prompt = "a golden metal pineapple"
-    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/test8"
+    text_prompt = "a pineapple"
+    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/test1"
 
     # diffusion model
     guidance_scale = 100
@@ -53,9 +61,9 @@ def main(rank, world_size):
     ddp_diff_tex = ddp(diff_tex, device_ids=[device])
 
     texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=ddp_diff_tex, is_latent=False, device=device, rank=rank)
-    texture_generator.texture_train(text_prompt=text_prompt, guidance_scale=guidance_scale, lr=0.01, epochs=10, save_path=save_path,
+    texture_generator.texture_train(text_prompt=text_prompt, guidance_scale=guidance_scale, lr=0.01, epochs=1000, save_path=save_path,
                                     dist_range=[1.2, 1.2], elev_range=[0.0, 0.0], azim_range=[0.0, 0.0],
-                                    info_update_period=1, render_light_enable=True, tex_size=tex_size, 
+                                    info_update_period=100, render_light_enable=True, tex_size=tex_size, 
                                     rendered_img_size=img_size, annealation=True, field_sample=field_sample, brdf=brdf)
 
 if __name__ == '__main__':
@@ -65,6 +73,6 @@ if __name__ == '__main__':
 
     world_size = opt.gpu_num
 
-    mp.spawn(main, args=(world_size, ))
+    mp.spawn(main, args=(world_size, ), nprocs=world_size)
 
 

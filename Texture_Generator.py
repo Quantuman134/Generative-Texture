@@ -162,7 +162,7 @@ class TextureGenerator:
             optimizer.step()
             total_loss += p_loss
             
-            if (epoch+1) % info_update_period == 0:
+            if (epoch+1) % info_update_period == 0  and (self.rank == 0):
                 end_t = time.time()
                 print(f"[INFO {self.device}] epoch {epoch+1} takes {(end_t - start_t):.4f} seconds. loss = {total_loss/info_update_period}")
                 total_loss = 0

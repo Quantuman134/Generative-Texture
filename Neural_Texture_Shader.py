@@ -87,7 +87,8 @@ class NeuralTextureShader(shader.ShaderBase):
                     texels=texels[:, :, :, :, 0:8],
                     lights=lights,
                     cameras=cameras,
-                    materials=materials
+                    materials=materials,
+                    device=self.device
                 )
             else:
                 colors = texels
