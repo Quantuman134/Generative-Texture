@@ -4,6 +4,7 @@ import random
 import numpy as np
 from diffusers import AutoencoderKL
 
+#used in single gpu
 if torch.cuda.is_available():
     device = torch.device("cuda:0")
     torch.cuda.set_device(device)
@@ -16,6 +17,15 @@ def seed_everything(seed=0):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
+
+def cuda_set_device(rank=0):
+# set cuda device of current proccess
+    if torch.cuda.is_available():
+        device = torch.device(f"cuda:{rank}")
+        torch.cuda.set_device(device)
+    else:
+        device = torch.device("cpu")
+    return device
 
 vae = AutoencoderKL.from_pretrained("stabilityai/stable-diffusion-2-1-base", subfolder="vae").to(device)
 
@@ -65,7 +75,7 @@ def encode_latents(imgs):
 
     return latents
 
-def read_obj(file_path):
+def _read_obj(file_path):
     vertices = []
     with open(file_path, 'r') as f:
         for line in f:
@@ -74,19 +84,19 @@ def read_obj(file_path):
                 vertices.append(vertex)
     return torch.tensor(vertices, dtype=torch.float32)
 
-def write_obj(file_path, vertices):
+def _write_obj(file_path, vertices):
     with open(file_path, 'w') as f:
         for vertex in vertices:
             f.write(f'v {vertex[0]} {vertex[1]} {vertex[2]}\n')
 
 def vert_normalize(in_path, out_path):
-    vert_tensor = read_obj(in_path)
+    vert_tensor = _read_obj(in_path)
     vert_max, _ = vert_tensor.max(dim=0)
     vert_min, _ = vert_tensor.min(dim=0)
     max_length = torch.max(vert_max - vert_min)
     center = (vert_max + vert_min) * 0.5
     vert_tensor = (vert_tensor - center)/max_length * 2
-    write_obj(out_path, vert_tensor)
+    _write_obj(out_path, vert_tensor)
     print(f'Converted and saved {len(vert_tensor)} vertices to {output_file}')
 
 if __name__ == '__main__':

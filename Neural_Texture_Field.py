@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils import device
+import utils
 import utils
 import matplotlib.pyplot as plt
 import numpy as np
@@ -13,7 +13,7 @@ class PositionEncoding(nn.Module):
     def __init__(self, input_dim=2, upper_freq_index=10) -> None:
         super().__init__()
         self.upper_freq_index = upper_freq_index
-        self.freq_indices = torch.tensor([i for i in range(upper_freq_index)], device=device).repeat(input_dim)
+        self.freq_indices = torch.tensor([i for i in range(upper_freq_index)], device=utils.device).repeat(input_dim)
         self.mapping_size = input_dim*2*upper_freq_index + input_dim
 
     def forward(self, x):
@@ -33,8 +33,10 @@ class PositionEncoding(nn.Module):
 # expected_tex_size: expected texture size represented by mlp, used in the forward disturb function
 class NeuralTextureField(nn.Module):
     def __init__(self, width=512, depth=3, input_dim=2, expected_tex_size = 512, 
-                 pe_enable=True, is_latent=False, sampling_disturb=False, brdf=False) -> None:
+                 pe_enable=True, is_latent=False, sampling_disturb=False, brdf=False, device='cpu') -> None:
         super().__init__()
+        self.device = device
+        print()
         self.width = width
         self.depth = depth
         self.pe_enable = pe_enable
@@ -108,7 +110,6 @@ class NeuralTextureField(nn.Module):
             x = layer(x)
         colors = x
         
-        
         if self.output_dim == 8:
             colors = torch.clamp(colors, -0.95, 0.95)
         else:
@@ -121,9 +122,9 @@ class NeuralTextureField(nn.Module):
         #output: 'latent' or 'rgb', latent: expected output range [-1, 1], rgb: expected output range [0, 1]
         #output dim: tensor: [B, C, H, W]
 
-        coo_tensor = torch.zeros((height, width, 2), dtype=torch.float32, device=device)
-        j = torch.arange(start=0, end=height, device=device).unsqueeze(0).transpose(0, 1).repeat(1, width)
-        i = torch.arange(start=0, end=height, device=device).unsqueeze(0).repeat(height, 1)
+        coo_tensor = torch.zeros((height, width, 2), dtype=torch.float32, device=self.device)
+        j = torch.arange(start=0, end=height, device=self.device).unsqueeze(0).transpose(0, 1).repeat(1, width)
+        i = torch.arange(start=0, end=height, device=self.device).unsqueeze(0).repeat(height, 1)
         x = (j * 2 + 1.0) / height - 1.0
         y = (i * 2 + 1.0) / width - 1.0
         coo_tensor[:, :, 0] = x
@@ -182,7 +183,7 @@ def main():
     #save_path = "./Experiments/MLP_Image_Tracking/cat_64_64"
     img_train = Image.open(img_path).resize((width, height))
     img_train.save(save_path + "/train.png")
-    img_train = transforms.ToTensor()(img_train).to(device).unsqueeze(0)[:,0:3,:,:] # [1, 3, H, W]
+    img_train = transforms.ToTensor()(img_train).to(utils.device).unsqueeze(0)[:,0:3,:,:] # [1, 3, H, W]
 
     test_mlp = NeuralTextureField(width=32, depth=6, pe_enable=True)
 
@@ -262,13 +263,13 @@ def main_3():
     image_path = "./Assets/Images/cat_512_512.png"
     save_path = "./Experiments/MLP_3D_Appearance_Tracking/Square/cat_32"
 
-    mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
-    _, faces, aux = io.load_obj(mesh_path, device=device)
+    mesh_obj = io.load_objs_as_meshes([mesh_path], device=utils.device)
+    _, faces, aux = io.load_obj(mesh_path, device=utils.device)
     mesh_data = {'mesh_obj': mesh_obj, 'faces': faces, 'aux': aux}
 
     img = Image.open(image_path).resize((64, 64))
     img.save(save_path + "/train.png")
-    img_trained = transforms.ToTensor()(img).unsqueeze(0).permute(0, 2, 3, 1).to(device)
+    img_trained = transforms.ToTensor()(img).unsqueeze(0).permute(0, 2, 3, 1).to(utils.device)
     
     # optimization in the fixed view
     # renderer setting
@@ -322,7 +323,7 @@ def main_4():
     texture_path = "./Assets/3D_Model/Orange_Car/textures/Body_dDo_d_orange.jpeg"
     save_path = "./Experiments/MLP_3D_Appearance_Tracking/Model_Fixed_View"
 
-    mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
+    mesh_obj = io.load_objs_as_meshes([mesh_path], device=utils.device)
 
     # normalize model, fit it into a bounding box with [-0.5, 0.5] range
     verts_packed = mesh_obj.verts_packed()
@@ -334,7 +335,7 @@ def main_4():
     verts_list = mesh_obj.verts_list()
     verts_list[:] = [(verts_obj - center)/max_length for verts_obj in verts_list]
 
-    _, faces, aux = io.load_obj(mesh_path, device=device)
+    _, faces, aux = io.load_obj(mesh_path, device=utils.device)
     mesh_data = {'mesh_obj': mesh_obj, 'faces': faces, 'aux': aux}
 
     renderer = NeuralTextureRenderer()
@@ -406,7 +407,7 @@ def main_5():
     texture_path = "./Assets/3D_Model/Orange_Car/textures/Body_dDo_d_orange.jpeg"
     save_path = "./Experiments/MLP_3D_Appearance_Tracking/Model"
 
-    mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
+    mesh_obj = io.load_objs_as_meshes([mesh_path], device=utils.device)
 
     # normalize model, fit it into a bounding box with [-0.5, 0.5] range
     verts_packed = mesh_obj.verts_packed()
@@ -418,7 +419,7 @@ def main_5():
     verts_list = mesh_obj.verts_list()
     verts_list[:] = [(verts_obj - center)/max_length for verts_obj in verts_list]
 
-    _, faces, aux = io.load_obj(mesh_path, device=device)
+    _, faces, aux = io.load_obj(mesh_path, device=utils.device)
     mesh_data = {'mesh_obj': mesh_obj, 'faces': faces, 'aux': aux}
 
     renderer = NeuralTextureRenderer()

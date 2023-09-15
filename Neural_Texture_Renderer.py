@@ -1,11 +1,11 @@
-from utils import device
+import utils
 from pytorch3d import renderer
 from Neural_Texture_Shader import NeuralTextureShader
 import torch
 from Multi_Directional_Lights import MultiDirectionalLights
 
 class NeuralTextureRenderer:
-    def __init__(self, offset=[0.0, 0.0, 0.0]) -> None:
+    def __init__(self, offset=[0.0, 0.0, 0.0], device=utils.device) -> None:
         self.device = device
         self.offset = torch.tensor([offset]) #to center of object
         self.rasterization_setting()
@@ -49,7 +49,7 @@ class NeuralTextureRenderer:
     def light_setting(self, directions=[[1.0, 1.0, 1.0]], intensities = [1.0], multi_lights=False):
         self.lights = renderer.DirectionalLights(direction=directions, device=self.device)
         if multi_lights:
-            self.lights = MultiDirectionalLights(directions=directions, intensities=intensities, device=device)
+            self.lights = MultiDirectionalLights(directions=directions, intensities=intensities, device=self.device)
     
     def render_around(self, mesh_data, diff_tex, dist=2.5, elev=45, offset=torch.tensor([[0, 0, 0]]), light_enable=False , rand_back=False, depth_render=False, depth_value_inverse=False, field_sample=False, shading_method='phong'):
         image_tensor_list = []
@@ -88,7 +88,7 @@ def main():
     #diff_tex = NeuralTextureField(width=32, depth=2, input_dim=3, brdf=True)
     #diff_tex.tex_load(mlp_path)
 
-    mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
+    mesh_obj = io.load_objs_as_meshes([mesh_path], device=utils.device)
 
     verts_packed = mesh_obj.verts_packed()
     
@@ -101,7 +101,7 @@ def main():
     verts_list[:] = [(verts_obj - center)/max_length for verts_obj in verts_list] #[-0.5, 0.5]
     mesh_obj._verts_packed = (verts_packed - center)/max_length
 
-    verts, faces, aux = io.load_obj(mesh_path, device=device)
+    verts, faces, aux = io.load_obj(mesh_path, device=utils.device)
     verts = (verts - center)/max_length
 
     mesh_data = {'mesh_obj': mesh_obj,'verts': verts, 'faces': faces, 'aux': aux}
@@ -142,8 +142,8 @@ def main_2():
     #diff_tex = torch.jit.load(mlp_path)
     diff_tex = DiffTexture(size=(64, 64), is_latent=True)
     diff_tex.tex_load(tex_path)
-    mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
-    _, faces, aux = io.load_obj(mesh_path, device=device)
+    mesh_obj = io.load_objs_as_meshes([mesh_path], device=utils.device)
+    _, faces, aux = io.load_obj(mesh_path, device=utils.device)
     mesh_data = {'mesh_obj': mesh_obj, 'faces': faces, 'aux': aux}
 
     renderer.camera_setting(dist=1.20, elev=0, azim=0)

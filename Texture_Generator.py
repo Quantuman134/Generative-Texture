@@ -1,4 +1,4 @@
-from utils import device, seed_everything
+from utils import seed_everything
 from pytorch3d import io
 import torch
 from Neural_Texture_Field import NeuralTextureField
@@ -11,8 +11,9 @@ import matplotlib.pyplot as plt
 import utils
 
 class TextureGenerator:
-    def __init__(self, mesh_path, diff_tex=None, is_latent=False) -> None:
+    def __init__(self, mesh_path, diff_tex=None, is_latent=False, device=utils.device, rank=0) -> None:
         self.device = device
+        self.rank = rank # multi gpu
         mesh_obj = io.load_objs_as_meshes([mesh_path], device=device)
         verts, faces, aux = io.load_obj(mesh_path, device=device)
 
@@ -34,7 +35,7 @@ class TextureGenerator:
         self.diff_tex = diff_tex
         if diff_tex is None:
             self.diff_tex = DiffTexture(is_latent=is_latent)
-        self.renderer = NeuralTextureRenderer()
+        self.renderer = NeuralTextureRenderer(device=device)
         self.is_latent=is_latent
     
     # offset: the camera transition offset that point to center of object
@@ -42,7 +43,7 @@ class TextureGenerator:
     # in the distance of render_around()
     # info_update_period: the period of saving and printing information of training, whose unit is epoch
      
-    def texture_train(self, text_prompt, lr, epochs, save_path=None, 
+    def texture_train(self, text_prompt, guidance_scale, lr, epochs, save_path=None, 
                       offset=[0.0, 0.0, 0.0], dist_range=[1.0, 2.0], 
                       elev_range=[0.0, 360.0], azim_range=[0.0, 360.0],
                       info_update_period=500, render_light_enable=False,
@@ -62,12 +63,15 @@ class TextureGenerator:
         offset = torch.tensor([offset])
 
         # light setting
-        #self.renderer.light_setting(directions=[[1, 1, 1]])
-        self.renderer.light_setting(directions=[[-1.0, -1.0, -1.0], [-1.0, -1.0, 1.0], [-1.0, 1.0, -1.0], [-1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [1.0, -1.0, 1.0], [1.0, 1.0, -1.0], [1.0, 1.0, 1.0]], 
-                           intensities=[0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7, 0.7], multi_lights=True)
+        if brdf:
+            self.renderer.light_setting(directions=[[-1.0, -1.0, -1.0], [-1.0, -1.0, 1.0], [-1.0, 1.0, -1.0], [-1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [1.0, -1.0, 1.0], [1.0, 1.0, -1.0], [1.0, 1.0, 1.0]], 
+                           intensities=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], multi_lights=True)
+        else:
+            self.renderer.light_setting(directions=[[1, 1, 1]])
+        
 
         #save initial data
-        if save_path is not None:
+        if (save_path is not None) and (self.rank == 0):
             if not (field_sample or brdf):
                 self.diff_tex.img_save(save_path=save_path + f"/tex_initial.png", width=tex_size, height=tex_size)
             img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, offset=offset, elev=25, 
@@ -91,7 +95,7 @@ class TextureGenerator:
         guidance.eval()
         text_embeddings = guidance.get_text_embeds(text_prompt, '')
 
-        print(f"[INFO] traning starts")
+        print(f"[INFO{ self.device}] traning starts")
         start_t = time.time()
         total_loss = 0
 
@@ -127,7 +131,7 @@ class TextureGenerator:
                                                   )[:, :, :, 0:-1]
 
             # save mediate results
-            if (save_path is not None) and ((epoch+1) % info_update_period == 0):
+            if (save_path is not None) and ((epoch+1) % info_update_period == 0) and (self.rank == 0):
                 
                 img_tensor = pred_tensor
                 #latent to RGB
@@ -147,28 +151,28 @@ class TextureGenerator:
             if annealation:
                 if epoch <= epochs * ann_threshold:
                     tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, text_embeddings=text_embeddings,
-                                                                   latent_input=self.is_latent, min_t=min_t, max_t=max_t)
+                                                                   latent_input=self.is_latent, min_t=min_t, max_t=max_t, guidance_scale=guidance_scale)
                 else:
                     tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, text_embeddings=text_embeddings,
-                                                                   latent_input=self.is_latent, min_t=min_t_ann, max_t=max_t_ann)
+                                                                   latent_input=self.is_latent, min_t=min_t_ann, max_t=max_t_ann, guidance_scale=guidance_scale)
             else:
                 tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, text_embeddings=text_embeddings,
-                                                                   latent_input=self.is_latent, min_t=min_t, max_t=max_t)
+                                                                   latent_input=self.is_latent, min_t=min_t, max_t=max_t, guidance_scale=guidance_scale)
             tensor_for_backward.backward()
             optimizer.step()
             total_loss += p_loss
             
             if (epoch+1) % info_update_period == 0:
                 end_t = time.time()
-                print(f"[INFO] epoch {epoch+1} takes {(end_t - start_t):.4f} seconds. loss = {total_loss/info_update_period}")
+                print(f"[INFO {self.device}] epoch {epoch+1} takes {(end_t - start_t):.4f} seconds. loss = {total_loss/info_update_period}")
                 total_loss = 0
                 start_t = end_t
             
-        print(f"[INFO] traning ends")
+        print(f"[INFO {self.device}] traning ends")
 
         del guidance
         
-        if save_path is not None:
+        if (save_path is not None) and (self.rank == 0):
             if not (field_sample or brdf):
                 self.diff_tex.img_save(save_path=save_path + f"/tex_result.png")
             img_tensor_list = self.renderer.render_around(self.mesh_data, self.diff_tex, offset=offset, elev=25,
@@ -185,7 +189,8 @@ class TextureGenerator:
                 img_array = np.clip(img_array, 0, 1)
                 plt.imsave(save_path + f"/results_{count}.png", img_array)
             
-            self.diff_tex_save(save_path=save_path+"/nth.pth")
+            #disable temprarily
+            #self.diff_tex_save(save_path=save_path+"/nth.pth")
 
     def diff_tex_save(self, save_path):
         self.diff_tex.tex_save(save_path)
@@ -194,11 +199,11 @@ def main():
     import numpy as np
     import matplotlib.pyplot as plt
 
-    seed_everything(0)
+    seed_everything(14551)
 
     mesh_path = "./Assets/3D_Model/Pineapple/mesh.obj"
-    text_prompt = "a pineapple"
-    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/test7"
+    text_prompt = "a golden metal pineapple"
+    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/test8"
     mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent/latent_noise.pth"
     #mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent_64/nth.pth"
     brdf = True
@@ -213,17 +218,23 @@ def main():
     diff_tex = NeuralTextureField(width=32, depth=2, pe_enable=True, input_dim=input_dim, brdf=brdf)
     #diff_tex.tex_load(tex_path=mlp_path)
 
+    guidance_scale = 100; # 100
+
     img_size=512
     tex_size=512
 
     texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=diff_tex, is_latent=False)
 
     #recomanded lr: mlp 256x6 --- 0.0001, 256x2 --- 0.003 mlp 32x6 --- 0.001, 32x2 --- 0.005/0.01
-    texture_generator.texture_train(text_prompt=text_prompt, lr=0.005, epochs=8000, save_path=save_path, 
-                                    dist_range=[1.2, 1.2], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
+    #texture_generator.texture_train(text_prompt=text_prompt, guidance_scale=guidance_scale, lr=0.01, epochs=12000, save_path=save_path, 
+    #                                dist_range=[0.9, 1.2], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
+    #                                info_update_period=200, render_light_enable=True, tex_size=tex_size, 
+    #                                rendered_img_size=img_size, annealation=True, field_sample=field_sample, brdf=brdf)
+
+    texture_generator.texture_train(text_prompt=text_prompt, guidance_scale=guidance_scale, lr=0.01, epochs=12000, save_path=save_path, 
+                                    dist_range=[1.2, 1.2], elev_range=[0.0, 0.0], azim_range=[0.0, 0.0],
                                     info_update_period=200, render_light_enable=True, tex_size=tex_size, 
                                     rendered_img_size=img_size, annealation=True, field_sample=field_sample, brdf=brdf)
-
 
     
 if __name__ == "__main__":
