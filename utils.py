@@ -27,6 +27,7 @@ def cuda_set_device(rank=0):
         device = torch.device("cpu")
     return device
 
+
 vae = AutoencoderKL.from_pretrained("stabilityai/stable-diffusion-2-1-base", subfolder="vae").to(device)
 
 # output imgs size [B, C, 8H, 8W], output range [0, 1]

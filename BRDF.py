@@ -8,7 +8,7 @@ PI = 3.141592653589
 ONE_OVER_PI = (1.0 / PI)
     
 def brdf_shading(
-    meshes, fragments, lights, cameras, materials, texels
+    meshes, fragments, lights, cameras, materials, texels, device=device
 ) -> torch.Tensor:
     """
     Input:
@@ -38,7 +38,7 @@ def brdf_shading(
     for i in range(lights.num):
         light = lights.lights[i]
 
-        brdf_data = brdf_data_cal(pixel_normals, pixel_coords_in_camera, light, cameras, texels)
+        brdf_data = brdf_data_cal(pixel_normals, pixel_coords_in_camera, light, cameras, texels, device=device)
 
         specular = specular_lighting(brdf_data)
         diffuse = diffuse_lighting(brdf_data)
@@ -54,18 +54,6 @@ def brdf_shading(
     return colors
 
 def specular_lighting(brdf_data):
-    #specular_alpha = brdf_data['specular_alpha']
-    #size = brdf_data['image_size']
-    #NdotH = brdf_data['NdotH'].reshape(size+(1, ))
-    #NdotL = brdf_data['NdotL'].reshape(size+(1, ))
-    #NdotV = brdf_data['NdotV'].reshape(size+(1, ))
-
-    #normals = brdf_data['normals']
-    #H_vec = brdf_data['H_vec']
-    #V_vec = brdf_data['V_vec']
-    #L_vec = brdf_data['L_vec']
-
-    #F = brdf_data['F']
     F = Fresnel_cal(brdf_data)
     D = D_cal(brdf_data)
     G2 = G2_cal(brdf_data)
@@ -88,7 +76,7 @@ def diffuse_lighting(brdf_data):
     diffuse_reflectance = diffuse_reflectance_cal(brdf_data)
     return diffuse_reflectance * (ONE_OVER_PI * NdotL(brdf_data))
 
-def brdf_data_cal(normals, verts, lights, cameras, texels):
+def brdf_data_cal(normals, verts, lights, cameras, texels, device=device):
     brdf_data = {}
 
     N, H, W, K, _ = texels.size()
@@ -114,6 +102,8 @@ def brdf_data_cal(normals, verts, lights, cameras, texels):
     #Fresnel_term = Fresnel_cal(base_color, metalness, HdotS(H_vec, V_vec))
 
     #diffuse_reflectance = diffuse_reflectance_cal(base_color, metalness)
+
+    brdf_data['device'] = device
 
     brdf_data['base_color'] = base_color
     brdf_data['metalness'] = metalness
@@ -175,9 +165,9 @@ def NdotV(brdf_data):
     return torch.clamp(torch.sum(brdf_data['normals'] * view_vec_cal(brdf_data['cameras'], brdf_data['verts']), dim=4).unsqueeze(3), 0.00001, 1.0)
 
 def Fresnel_cal(brdf_data):
-    mindielF0 = torch.tensor([MIN_DIELECTRICS_F0], dtype=torch.float32, device=device)
+    mindielF0 = torch.tensor([MIN_DIELECTRICS_F0], dtype=torch.float32, device=brdf_data['device'])
     F0 = torch.lerp(mindielF0, brdf_data['base_color'], brdf_data['metalness'])
-    F90 = 1.0/MIN_DIELECTRICS_F0 * torch.sum(F0 * torch.tensor([0.2126, 0.7152, 0.0722], dtype=torch.float32, device=device), dim=-1).unsqueeze(3)
+    F90 = 1.0/MIN_DIELECTRICS_F0 * torch.sum(F0 * torch.tensor([0.2126, 0.7152, 0.0722], dtype=torch.float32, device=brdf_data['device']), dim=-1).unsqueeze(3)
     F90 = torch.minimum(torch.ones_like(F90), F90)
 
     F = F0 + (F90 - F0) * torch.pow(1.0 - HdotS(brdf_data), 5.0)
