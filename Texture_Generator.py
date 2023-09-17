@@ -110,15 +110,15 @@ class TextureGenerator:
 
             optimizer.zero_grad()
 
-            rand = torch.rand(3)
+            rand = torch.rand(12)
             randint = torch.randint(0, 13, size=(2, ))
             rand_render = torch.randint(0, 2, size=(2, ))
 
             bool_list = [False, False]
 
-            dist = rand[0] * (dist_range[1] - dist_range[0]) + dist_range[0]
-            elev = rand[1] * (elev_range[1] - elev_range[0]) + elev_range[0]
-            azim = rand[2] * (azim_range[1] - azim_range[0]) + azim_range[0]
+            dist = rand[0 + self.rank * 3] * (dist_range[1] - dist_range[0]) + dist_range[0]
+            elev = rand[1 + self.rank * 3] * (elev_range[1] - elev_range[0]) + elev_range[0]
+            azim = rand[2 + self.rank * 3] * (azim_range[1] - azim_range[0]) + azim_range[0]
             #elev = 30 * randint[0] / 2
             #azim = 30 * randint[1]
             #azim = 90.0
@@ -202,8 +202,8 @@ def main():
     seed_everything(14551)
 
     mesh_path = "./Assets/3D_Model/Pineapple/mesh.obj"
-    text_prompt = "a golden metal pineapple"
-    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/test8"
+    text_prompt = "a pineapple"
+    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/test1"
     mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent/latent_noise.pth"
     #mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent_64/nth.pth"
     brdf = True
@@ -215,7 +215,7 @@ def main():
 
     #diff_tex = DiffTexture(size=(256, 256), is_latent=True)
 
-    diff_tex = NeuralTextureField(width=32, depth=2, pe_enable=True, input_dim=input_dim, brdf=brdf)
+    diff_tex = NeuralTextureField(width=32, depth=2, pe_enable=True, input_dim=input_dim, brdf=brdf, device=utils.device)
     #diff_tex.tex_load(tex_path=mlp_path)
 
     guidance_scale = 100; # 100
@@ -226,16 +226,10 @@ def main():
     texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=diff_tex, is_latent=False)
 
     #recomanded lr: mlp 256x6 --- 0.0001, 256x2 --- 0.003 mlp 32x6 --- 0.001, 32x2 --- 0.005/0.01
-    #texture_generator.texture_train(text_prompt=text_prompt, guidance_scale=guidance_scale, lr=0.01, epochs=12000, save_path=save_path, 
-    #                                dist_range=[0.9, 1.2], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
-    #                                info_update_period=200, render_light_enable=True, tex_size=tex_size, 
-    #                                rendered_img_size=img_size, annealation=True, field_sample=field_sample, brdf=brdf)
-
-    texture_generator.texture_train(text_prompt=text_prompt, guidance_scale=guidance_scale, lr=0.01, epochs=12000, save_path=save_path, 
-                                    dist_range=[1.2, 1.2], elev_range=[0.0, 0.0], azim_range=[0.0, 0.0],
-                                    info_update_period=200, render_light_enable=True, tex_size=tex_size, 
+    texture_generator.texture_train(text_prompt=text_prompt, guidance_scale=guidance_scale, lr=0.01, epochs=1000, save_path=save_path, 
+                                    dist_range=[1.2, 1.2], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
+                                    info_update_period=50, render_light_enable=True, tex_size=tex_size, 
                                     rendered_img_size=img_size, annealation=True, field_sample=field_sample, brdf=brdf)
-
     
 if __name__ == "__main__":
     main()

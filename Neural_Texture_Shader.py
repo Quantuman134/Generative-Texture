@@ -333,7 +333,7 @@ class NeuralTextureShader(shader.ShaderBase):
         D = (colors.size()[4] + 1) #pixel buffer depth
         pixel_colors = torch.ones((N, H, W, D), dtype=colors.dtype, device=colors.device)
         #pixel_colors = torch.ones((N, H, W, 4), dtype=colors.dtype, device=colors.device)
-        background_color = torch.ones(D-1, dtype=colors.dtype, device=colors.device) * 1.0
+        background_color = torch.ones(D-1, dtype=colors.dtype, device=colors.device) * 0.0
         if self.rand_back:
             background_color =  torch.rand(D-1, dtype=colors.dtype, device=colors.device) * 2 - 1#random background color
 
