@@ -1,5 +1,13 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"]="0,1,2,3"
+
+proxy = 'http://127.0.0.1:7890'
+
+os.environ['http_proxy'] = proxy 
+os.environ['HTTP_PROXY'] = proxy
+os.environ['https_proxy'] = proxy
+os.environ['HTTPS_PROXY'] = proxy
+
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
