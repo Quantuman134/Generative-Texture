@@ -1,12 +1,12 @@
 import os
 os.environ["CUDA_VISIBLE_DEVICES"]="0,1,2,3"
 
-#proxy = 'http://127.0.0.1:7890'
+proxy = 'http://127.0.0.1:7890'
 
-#os.environ['http_proxy'] = proxy 
-#os.environ['HTTP_PROXY'] = proxy
-#os.environ['https_proxy'] = proxy
-#os.environ['HTTPS_PROXY'] = proxy
+os.environ['http_proxy'] = proxy 
+os.environ['HTTP_PROXY'] = proxy
+os.environ['https_proxy'] = proxy
+os.environ['HTTPS_PROXY'] = proxy
 
 import torch
 import torch.distributed as dist
@@ -40,7 +40,7 @@ def main(rank=0, world_size=1):
     device = utils.cuda_set_device(rank)
 
     # seed set
-    utils.seed_everything(0)
+    utils.seed_everything(42)
 
     # network configuration
     input_dim = 3
@@ -51,12 +51,12 @@ def main(rank=0, world_size=1):
         field_sample = True
 
     # input configuration
-    mesh_path = "./Assets/3D_Model/Pineapple/mesh.obj"
+    mesh_path = "./Assets/3D_Model/Pineapple/Pineapple.obj"
     text_prompt = "a pineapple"
-    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/gpu_2"
+    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/test9"
 
     # diffusion model
-    guidance_scale = 100
+    guidance_scale = 50
 
     # other configuration
     img_size = 512
@@ -66,10 +66,10 @@ def main(rank=0, world_size=1):
     ddp_diff_tex = ddp(diff_tex, device_ids=[device])
 
     texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=ddp_diff_tex, is_latent=False, device=device, rank=rank)
-    texture_generator.texture_train(text_prompt=text_prompt, guidance_scale=guidance_scale, lr=0.005, epochs=4000, save_path=save_path,
+    texture_generator.texture_train(text_prompt=text_prompt, guidance_scale=guidance_scale, lr=0.01, epochs=4000, save_path=save_path,
                                     dist_range=[1.2, 1.2], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
                                     info_update_period=200, render_light_enable=True, tex_size=tex_size, 
-                                    rendered_img_size=img_size, annealation=True, field_sample=field_sample, brdf=brdf)
+                                    rendered_img_size=img_size, annealation=False, field_sample=field_sample, brdf=brdf)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -80,6 +80,3 @@ if __name__ == '__main__':
     world_size = opt.gpu_num
 
     main()
-    #mp.spawn(main, args=(world_size, ), nprocs=world_size)
-
-

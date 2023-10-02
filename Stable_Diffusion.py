@@ -1,5 +1,5 @@
 from transformers import CLIPTextModel, CLIPTokenizer, logging
-from diffusers import AutoencoderKL, UNet2DConditionModel, PNDMScheduler, DDIMScheduler
+from diffusers import AutoencoderKL, UNet2DConditionModel, PNDMScheduler, DDIMScheduler, DPMSolverMultistepScheduler
 from diffusers.utils.import_utils import is_xformers_available
 
 # suppress partial model loading warning
@@ -42,7 +42,6 @@ class StableDiffusion(nn.Module):
         self.sd_version = sd_version
 
         print(f'[INFO] loading stable diffusion...')
-        
         if hf_key is not None:
             print(f'[INFO] using hugging face custom model key: {hf_key}')
             model_key = hf_key
@@ -65,7 +64,7 @@ class StableDiffusion(nn.Module):
             self.unet.enable_xformers_memory_efficient_attention()
         
         self.scheduler = DDIMScheduler.from_pretrained(model_key, subfolder="scheduler")
-        # self.scheduler = PNDMScheduler.from_pretrained(model_key, subfolder="scheduler")
+        #self.scheduler = DPMSolverMultistepScheduler.from_pretrained(model_key, subfolder="scheduler")
 
         self.num_train_timesteps = self.scheduler.config.num_train_timesteps #default is 1000
         self.min_step = int(self.num_train_timesteps * 0.02)
@@ -123,8 +122,8 @@ class StableDiffusion(nn.Module):
         noise_pred = noise_pred_text + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
         # w(t), sigma_t^2
-        w = (1 - self.alphas[t])
-        # w = self.alphas[t] ** 0.5 * (1 - self.alphas[t])
+        # w = (1 - self.alphas[t])
+        w = self.alphas[t] ** 0.5 * (1 - self.alphas[t])
         grad = w * (noise_pred - noise)
 
         #peseudo-loss
