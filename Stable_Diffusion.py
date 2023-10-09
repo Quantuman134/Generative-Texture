@@ -90,6 +90,7 @@ class StableDiffusion(nn.Module):
 
         # Cat for final embeddings
         text_embeddings = torch.cat([uncond_embeddings, text_embeddings])
+
         return text_embeddings
 
 
@@ -122,8 +123,8 @@ class StableDiffusion(nn.Module):
         noise_pred = noise_pred_text + guidance_scale * (noise_pred_text - noise_pred_uncond)
 
         # w(t), sigma_t^2
-        # w = (1 - self.alphas[t])
-        w = self.alphas[t] ** 0.5 * (1 - self.alphas[t])
+        w = (1 - self.alphas[t])
+        # w = self.alphas[t] ** 0.5 * (1 - self.alphas[t])
         grad = w * (noise_pred - noise)
 
         #peseudo-loss

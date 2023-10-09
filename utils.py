@@ -3,6 +3,19 @@ import torch
 import random
 import numpy as np
 from diffusers import AutoencoderKL
+from PIL import Image
+import matplotlib.pyplot as plt
+from torchvision import transforms
+
+def net_config():
+    proxy = 'http://127.0.0.1:7890'
+
+    os.environ['http_proxy'] = proxy 
+    os.environ['HTTP_PROXY'] = proxy
+    os.environ['https_proxy'] = proxy
+    os.environ['HTTPS_PROXY'] = proxy
+
+net_config()
 
 #used in single gpu
 if torch.cuda.is_available():
@@ -99,6 +112,24 @@ def vert_normalize(in_path, out_path):
     vert_tensor = (vert_tensor - center)/max_length * 2
     _write_obj(out_path, vert_tensor)
     print(f'Converted and saved {len(vert_tensor)} vertices to {output_file}')
+
+def read_img_tensor(img_dir, size=(512, 512), device=device):
+    img = Image.open(img_dir)
+    img = img.resize(size)
+    img_tensor = transforms.ToTensor()(img).unsqueeze(0)[:, 0:3, :, :].to(device)
+
+    return img_tensor
+
+def save_img_tensor(img_tensor, save_dir):
+    # size of tensor (N, C, H, W), N is restricted to 1, the range of color value is [0, 1.0]
+    img_tensor = torch.clamp(img_tensor, 0.0, 1.0)
+    img = img_tensor.squeeze().permute(1, 2, 0).detach().cpu().numpy()
+    plt.imsave(save_dir, img)
+
+def show_img_tensor(img_tensor):
+    img = img_tensor.squeeze().permute(1, 2, 0).detach().cpu().numpy()
+    plt.imshow(img)
+    plt.show()
 
 if __name__ == '__main__':
     input_file = './Assets/3D_Model/Table/mesh.obj'

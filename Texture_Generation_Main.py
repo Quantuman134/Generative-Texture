@@ -68,7 +68,7 @@ def main(rank=0, world_size=1):
     texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=ddp_diff_tex, is_latent=False, device=device, rank=rank)
     texture_generator.texture_train(text_prompt=text_prompt, guidance_scale=guidance_scale, lr=0.01, epochs=4000, save_path=save_path,
                                     dist_range=[1.2, 1.2], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
-                                    info_update_period=200, render_light_enable=True, tex_size=tex_size, 
+                                    info_update_period=10, render_light_enable=True, tex_size=tex_size, 
                                     rendered_img_size=img_size, annealation=False, field_sample=field_sample, brdf=brdf)
 
 if __name__ == '__main__':
