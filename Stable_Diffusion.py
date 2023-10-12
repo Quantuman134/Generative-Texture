@@ -35,7 +35,7 @@ def seed_everything(seed):
     #torch.backends.cudnn.benchmark = True
 
 class StableDiffusion(nn.Module):
-    def __init__(self, device, sd_version='2.1', hf_key=None):
+    def __init__(self, device, num_inference_steps=1000, sd_version='2.1', hf_key=None):
         super().__init__()
 
         self.device = device
@@ -65,8 +65,10 @@ class StableDiffusion(nn.Module):
         
         self.scheduler = DDIMScheduler.from_pretrained(model_key, subfolder="scheduler")
         #self.scheduler = DPMSolverMultistepScheduler.from_pretrained(model_key, subfolder="scheduler")
+        self.scheduler.set_timesteps(num_inference_steps)
 
-        self.num_train_timesteps = self.scheduler.config.num_train_timesteps #default is 1000
+        #self.num_train_timesteps = self.scheduler.config.num_train_timesteps #default is 1000
+        self.num_train_timesteps = num_inference_steps
         self.min_step = int(self.num_train_timesteps * 0.02)
         self.max_step = int(self.num_train_timesteps * 0.98)
         self.alphas = self.scheduler.alphas_cumprod.to(self.device) # for convenience

@@ -36,12 +36,12 @@ class NeuralTextureField(nn.Module):
                  pe_enable=True, is_latent=False, sampling_disturb=False, brdf=False, device='cpu') -> None:
         super().__init__()
         self.device = device
-        print()
         self.width = width
         self.depth = depth
         self.pe_enable = pe_enable
         self.is_latent = is_latent
         self.sampling_disturb = sampling_disturb
+        self.input_dim = input_dim
         self.output_dim = 3
         if is_latent:
             self.output_dim = 4

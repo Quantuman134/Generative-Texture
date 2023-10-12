@@ -38,6 +38,7 @@ def main(rank=0, world_size=1):
 
     # device set
     device = utils.cuda_set_device(rank)
+    #device = utils.device
 
     # seed set
     utils.seed_everything(42)
@@ -51,12 +52,20 @@ def main(rank=0, world_size=1):
         field_sample = True
 
     # input configuration
-    mesh_path = "./Assets/3D_Model/Pineapple/Pineapple.obj"
-    text_prompt = "a pineapple"
-    save_path = "./Experiments/Generative_Texture_MLP/Pineapple/test9"
+    mesh_path = "./Assets/3D_Model/Hulk/Hulk.obj"
+    text_prompt = "a Hulk"
+    save_path = "./Experiments/Generative_Texture_MLP/Hulk/CN_test1"
 
     # diffusion model
-    guidance_scale = 50
+    guidance_scale = 100
+    # controlnet
+    controlnet_conditioning_scale = 1.0
+    # edge detector
+    low_threshold=10
+    high_threshold=200
+
+    # scheduler steps
+    num_inference_steps = 1000
 
     # other configuration
     img_size = 512
@@ -66,10 +75,19 @@ def main(rank=0, world_size=1):
     ddp_diff_tex = ddp(diff_tex, device_ids=[device])
 
     texture_generator = TextureGenerator(mesh_path=mesh_path, diff_tex=ddp_diff_tex, is_latent=False, device=device, rank=rank)
-    texture_generator.texture_train(text_prompt=text_prompt, guidance_scale=guidance_scale, lr=0.01, epochs=4000, save_path=save_path,
+    #texture_generator.texture_train(text_prompt=text_prompt, guidance_scale=guidance_scale, lr=0.01, epochs=4000, save_path=save_path,
+    #                                dist_range=[1.2, 1.2], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
+    #                                info_update_period=10, render_light_enable=True, tex_size=tex_size, 
+    #                                rendered_img_size=img_size, annealation=False, field_sample=field_sample, brdf=brdf)
+
+    #controlnet
+    texture_generator.texture_train(dm='cn', text_prompt=text_prompt, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale, 
+                                    lr=0.01, epochs=8000, save_path=save_path,
                                     dist_range=[1.2, 1.2], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
-                                    info_update_period=10, render_light_enable=True, tex_size=tex_size, 
-                                    rendered_img_size=img_size, annealation=False, field_sample=field_sample, brdf=brdf)
+                                    info_update_period=200, render_light_enable=True, tex_size=tex_size, 
+                                    rendered_img_size=img_size, annealation=False, field_sample=field_sample, brdf=brdf, num_inference_steps=num_inference_steps,
+                                    low_threshold=low_threshold, high_threshold=high_threshold)
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

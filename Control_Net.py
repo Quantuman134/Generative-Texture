@@ -3,6 +3,8 @@ from diffusers import DDIMScheduler, AutoencoderKL
 from transformers import CLIPTokenizer, CLIPTextModel
 from diffusers.utils.import_utils import is_xformers_available
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import cv2
 import numpy as np
 import time
@@ -24,8 +26,10 @@ class SpecifyGradient(torch.autograd.Function):
         gt_grad = gt_grad * grad_scale
         return gt_grad, None
 
-class ControlNet():
+class ControlNet(nn.Module):
     def __init__(self, device='cpu', num_inference_steps=50, controlnet_library='lllyasviel/sd-controlnet-canny', sd_library="runwayml/stable-diffusion-v1-5") -> None:
+        super().__init__()
+        
         # num_inference_step: 50 or 1000?
         self.resolution = 512
         self.device = device
@@ -46,8 +50,12 @@ class ControlNet():
         self.num_inference_steps = num_inference_steps
         self.alphas = self.scheduler.alphas_cumprod.to(self.device) # for convenience
 
+        print(f'[INFO] loaded ControlNet!')
+
     def get_text_embeds(self, prompt, negative_prompt):
         # prompt, negative_prompt: [str]
+        prompt = prompt + ', best quality, extremely detailed'
+        negative_prompt = negative_prompt + ', longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality'
 
         # Tokenize text and get embeddings
         text_input = self.tokenizer(prompt, padding='max_length', max_length=self.tokenizer.model_max_length, truncation=True, return_tensors='pt')
@@ -96,9 +104,13 @@ class ControlNet():
         
         return imgs
     
-    def train_step(self, latents, edge_maps, text_embeddings, min_t=0.02, max_t=0.98, 
+    def train_step(self, pred_tensor, edge_maps, text_embeddings, min_t=0.02, max_t=0.98, 
                    guidance_scale=7.5, controlnet_conditioning_scale=1.0):
         # edge_maps: for classfier-free guidance, the batchsize is 2
+
+        pred_rgb_512 = F.interpolate(pred_tensor, (512, 512), mode='bilinear', align_corners=False)
+        # encode image into latents with vae, requires grad!
+        latents = self.encode_imgs(pred_rgb_512)
 
         # config time sample
         # due to the list timesteps is reversed order e.g.[1000, 900, 800...]
@@ -160,10 +172,6 @@ class ControlNet():
         return tensor_for_backward, p_loss 
 
     def produce_latents(self, edge_maps, prompts, negative_prompts='', num_inference_steps=100, guidance_scale=7.5, controlnet_conditioning_scale=1.0):
-        prompts = prompts + ', best quality, extremely detailed'
-        negative_prompts = negative_prompts + ', longbody, lowres, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low quality'
-
-
         # Prompts -> text embeds
         text_embeds = self.get_text_embeds(prompts, negative_prompts) # [2, 77, 768]
 

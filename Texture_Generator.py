@@ -1,9 +1,10 @@
-from utils import seed_everything
+from utils import seed_everything, save_img_tensor
 from pytorch3d import io
 import torch
 from Neural_Texture_Field import NeuralTextureField
 from Differentiable_Texture import DiffTexture
 from Stable_Diffusion import StableDiffusion
+from Control_Net import ControlNet
 from Neural_Texture_Renderer import NeuralTextureRenderer
 import time
 import numpy as np
@@ -43,12 +44,13 @@ class TextureGenerator:
     # in the distance of render_around()
     # info_update_period: the period of saving and printing information of training, whose unit is epoch
      
-    def texture_train(self, text_prompt, guidance_scale, lr, epochs, save_path=None, 
+    def texture_train(self, text_prompt, guidance_scale, lr, epochs, dm='sd', save_path=None, 
                       offset=[0.0, 0.0, 0.0], dist_range=[1.0, 2.0], 
                       elev_range=[0.0, 360.0], azim_range=[0.0, 360.0],
                       info_update_period=500, render_light_enable=False,
                       tex_size=512, rendered_img_size=512, annealation=False,
-                      field_sample=False, brdf=False):
+                      field_sample=False, brdf=False, num_inference_steps=1000, controlnet_conditioning_scale=1.0,
+                      low_threshold=100, high_threshold=200):
         if brdf:
             shading_method = 'brdf'
         else:
@@ -91,9 +93,18 @@ class TextureGenerator:
         
         #optimizer = torch.optim.Adam(self.diff_tex.parameters(), lr=lr)
         optimizer = torch.optim.AdamW(self.diff_tex.parameters(), lr=lr, betas=(0.9, 0.99), eps=1e-15)
-        guidance = StableDiffusion(device=self.device)
+        
+        if dm == 'sd':
+            guidance = StableDiffusion(device=self.device, num_inference_steps=num_inference_steps)
+        elif dm == 'cn':
+            guidance = ControlNet(device=self.device, num_inference_steps=num_inference_steps)
+        
         guidance.eval()
         text_embeddings = guidance.get_text_embeds(text_prompt, '')
+
+        # for ControlNet, we need a white texture for edge detection
+        if dm == 'cn':
+            white_tex = NeuralTextureField(width=2, depth=1, pe_enable=False, input_dim=self.diff_tex.module.input_dim, brdf=brdf, device=self.device)
 
         print(f"[INFO{ self.device}] traning starts")
         start_t = time.time()
@@ -129,19 +140,35 @@ class TextureGenerator:
                                                   depth_value_inverse=bool_list[rand_render[1]],
                                                   field_sample=field_sample, shading_method=shading_method
                                                   )[:, :, :, 0:-1]
+            
+            if dm == 'cn':
+                img_for_edge_detection = self.renderer.rendering(self.mesh_data, white_tex, 
+                                                  light_enable=render_light_enable, rand_back=False, 
+                                                  depth_render=bool_list[rand_render[0]],
+                                                  depth_value_inverse=bool_list[rand_render[1]],
+                                                  field_sample=field_sample, shading_method=shading_method
+                                                  )[:, :, :, 0:-1].permute(0, 3, 1, 2)
+                
+                edge_map = guidance.edge_detect(imgs=img_for_edge_detection, low_threshold=low_threshold, high_threshold=high_threshold)
 
             # save mediate results
             if (save_path is not None) and ((epoch+1) % info_update_period == 0) and (self.rank == 0):
                 
-                img_tensor = pred_tensor
+                img_tensor = pred_tensor.permute(0, 3, 1, 2)
                 #latent to RGB
                 if self.is_latent:
-                    img_tensor = img_tensor.permute(0, 3, 1, 2)
-                    img_tensor = utils.decode_latents(img_tensor).permute(0, 2, 3, 1)
+                    pass
+                    #img_tensor = img_tensor.permute(0, 3, 1, 2)
+                    #img_tensor = utils.decode_latents(img_tensor).permute(0, 2, 3, 1)
 
-                img_array = img_tensor[0, :, :, :].cpu().detach().numpy()
-                img_array = np.clip(img_array, 0, 1)
-                plt.imsave(save_path + f"/ep_{epoch+1}.png", img_array)
+                #img_array = img_tensor[0, :, :, :].cpu().detach().numpy()
+                #img_array = np.clip(img_array, 0, 1)
+                #plt.imsave(save_path + f"/ep_{epoch+1}.png", img_array)
+                save_img_tensor(img_tensor, save_dir=save_path + f"/ep_{epoch+1}.png")
+
+                if dm == 'cn':
+                    save_img_tensor(edge_map, save_dir=save_path + f"/edge_{epoch+1}.png")
+
                 if not (field_sample or brdf):
                     self.diff_tex.img_save(save_path=save_path + f"/tex_ep_{epoch+1}.png", width=tex_size, height=tex_size)
 
@@ -150,14 +177,27 @@ class TextureGenerator:
             # SDS with annealation process
             if annealation:
                 if epoch <= epochs * ann_threshold:
-                    tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, text_embeddings=text_embeddings,
-                                                                   latent_input=self.is_latent, min_t=min_t, max_t=max_t, guidance_scale=guidance_scale)
+                    if dm == 'sd':
+                        tensor_for_backward, p_loss = self.SD_train_step(guidance=guidance, pred_tensor=pred_tensor, text_embeddings=text_embeddings,
+                                                                        min_t=min_t, max_t=max_t, guidance_scale=guidance_scale)
+                    elif dm == 'cn':
+                        tensor_for_backward, p_loss = self.CN_train_step(guidance=guidance, pred_tensor=pred_tensor, edge_map=edge_map, text_embeddings=text_embeddings,
+                                                                        min_t=min_t, max_t=max_t, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale)
                 else:
-                    tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, text_embeddings=text_embeddings,
-                                                                   latent_input=self.is_latent, min_t=min_t_ann, max_t=max_t_ann, guidance_scale=guidance_scale)
+                    if dm == 'sd':
+                        tensor_for_backward, p_loss = self.SD_train_step(guidance=guidance, pred_tensor=pred_tensor, text_embeddings=text_embeddings,
+                                                                        min_t=min_t_ann, max_t=max_t_ann, guidance_scale=guidance_scale)
+                    elif dm == 'cn':
+                        tensor_for_backward, p_loss = self.CN_train_step(guidance=guidance, pred_tensor=pred_tensor, edge_map=edge_map, text_embeddings=text_embeddings,
+                                                                        min_t=min_t_ann, max_t=max_t_ann, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale)
             else:
-                tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, text_embeddings=text_embeddings,
-                                                                   latent_input=self.is_latent, min_t=min_t, max_t=max_t, guidance_scale=guidance_scale)
+                if dm =='sd':
+                    tensor_for_backward, p_loss = self.SD_train_step(guidance=guidance, pred_tensor=pred_tensor, text_embeddings=text_embeddings,
+                                                                        min_t=min_t, max_t=max_t, guidance_scale=guidance_scale)
+                elif dm =='cn':
+                    tensor_for_backward, p_loss = self.CN_train_step(guidance=guidance, pred_tensor=pred_tensor, edge_map=edge_map, text_embeddings=text_embeddings,
+                                                                        min_t=min_t, max_t=max_t, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale)
+
             tensor_for_backward.backward()
             optimizer.step()
             total_loss += p_loss
@@ -194,6 +234,23 @@ class TextureGenerator:
 
     def diff_tex_save(self, save_path):
         self.diff_tex.tex_save(save_path)
+
+    def SD_train_step(self, guidance:StableDiffusion, pred_tensor, text_embeddings, min_t, max_t, guidance_scale=7.5):
+        tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, text_embeddings=text_embeddings,
+                                                        latent_input=self.is_latent, min_t=min_t, max_t=max_t, guidance_scale=guidance_scale)
+
+        return tensor_for_backward, p_loss
+    
+    def CN_train_step(self, guidance:ControlNet, pred_tensor, edge_map, text_embeddings,
+                      min_t=0.02, max_t=0.98, guidance_scale=7.5, controlnet_conditioning_scale=1.0):
+        # prepare edge map
+        #edge_map = guidance.edge_detect(imgs=img_for_edge_detection)
+        edge_maps = torch.cat([edge_map] * 2)
+
+        tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, edge_maps=edge_maps, text_embeddings=text_embeddings, 
+                                                          min_t=min_t, max_t=max_t, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale)
+
+        return tensor_for_backward, p_loss
 
 def main():
     import numpy as np
