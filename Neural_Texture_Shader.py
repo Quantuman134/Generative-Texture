@@ -90,6 +90,12 @@ class NeuralTextureShader(shader.ShaderBase):
                     materials=materials,
                     device=self.device
                 )
+            elif self.shading_method == 'norm':
+                colors = self.norm_shading(
+                    meshes=meshes,
+                    fragments=fragments,
+                    texels=texels
+                )
             else:
                 colors = texels
 
@@ -113,7 +119,7 @@ class NeuralTextureShader(shader.ShaderBase):
         grid[:, :, 1] *= g
         grid[:, :, 2] = 0
         texels = grid.unsqueeze(0).unsqueeze(3).repeat(N, 1, 1, K, 1)
-        return texels
+        return texelsphong
     
     def z_coordinate_color(self, fragments: Fragments):
         #r represent the indice i, and g represent the indice j
@@ -191,6 +197,33 @@ class NeuralTextureShader(shader.ShaderBase):
         colors = pixel_normals
         texels = colors.reshape(N, H, W, K, 3)
         return texels    
+    
+    def norm_shading(self, meshes, fragments, texels):
+        """
+        Input:
+            texels: (N, H, W, K, C)
+
+        Returns:
+            colors: (N, H, W, K, 3), range[0, 1] (mapped from [-1, 1])
+        """  
+
+        N, H, W, K, C = texels.size()
+        # if there is a normal texture
+        norm_bias = texels[:, :, :, :, 5:8] if C==8 else torch.zeros((N, H, W, K, C), dtype=torch.float32, device=self.device)
+        
+        verts = meshes.verts_packed()  # (V, 3)
+        faces = meshes.faces_packed()  # (F, 3)
+        vertex_normals = meshes.verts_normals_packed()  # (V, 3)
+        faces_normals = vertex_normals[faces]
+
+        pixel_normals = interpolate_face_attributes(
+            fragments.pix_to_face, fragments.bary_coords, faces_normals
+        ) # pixel_normals (1, H, W, 1, 3)
+
+        #colors = ((pixel_normals + norm_bias) + 1) / 2
+        colors = (pixel_normals + 1)/2
+        
+        return colors
     
     def field_texture_sample(self, fragments: Fragments, nearest=False):
         N, H, W, K = fragments.pix_to_face.size()

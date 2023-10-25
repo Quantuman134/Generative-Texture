@@ -8,6 +8,7 @@ import torch.nn.functional as F
 import cv2
 import numpy as np
 import time
+from PIL import Image
 
 from torch.cuda.amp import custom_bwd, custom_fwd 
 
@@ -104,7 +105,7 @@ class ControlNet(nn.Module):
         
         return imgs
     
-    def train_step(self, pred_tensor, edge_maps, text_embeddings, min_t=0.02, max_t=0.98, 
+    def train_step(self, pred_tensor, cond_imgs, text_embeddings, min_t=0.02, max_t=0.98, 
                    guidance_scale=7.5, controlnet_conditioning_scale=1.0):
         # edge_maps: for classfier-free guidance, the batchsize is 2
 
@@ -136,7 +137,7 @@ class ControlNet(nn.Module):
                         latent_model_input,
                         t,
                         encoder_hidden_states=text_embeddings,
-                        controlnet_cond=edge_maps,
+                        controlnet_cond=cond_imgs,
                         return_dict=False,
                     )
 
@@ -171,12 +172,12 @@ class ControlNet(nn.Module):
 
         return tensor_for_backward, p_loss 
 
-    def produce_latents(self, edge_maps, prompts, negative_prompts='', num_inference_steps=100, guidance_scale=7.5, controlnet_conditioning_scale=1.0):
+    def produce_latents(self, cond_imgs, prompts, negative_prompts='', num_inference_steps=100, guidance_scale=7.5, controlnet_conditioning_scale=1.0):
         # Prompts -> text embeds
         text_embeds = self.get_text_embeds(prompts, negative_prompts) # [2, 77, 768]
 
         # prepare edge_map
-        edge_maps = torch.cat([edge_maps] * 2)
+        cond_imgs = torch.cat([cond_imgs] * 2)
 
         # get a sample latent from Gaussian noise
         latents = torch.randn((1, 4, 64, 64), dtype=torch.float32, device=self.device)
@@ -195,7 +196,7 @@ class ControlNet(nn.Module):
                         latent_model_input,
                         t,
                         encoder_hidden_states=text_embeds,
-                        controlnet_cond=edge_maps,
+                        controlnet_cond=cond_imgs,
                         return_dict=False,
                     )
 
@@ -229,21 +230,24 @@ def main_contronet_generate():
     seed_everything(51644)
 
     # config
-    img_dir = './helmet.png'
-    text_prompt = 'a starwar helmet'
+    img_dir = './hulk.png'
+    text_prompt = 'a Hulk'
     num_inference_steps = 100
     guidance_scale=9.0
     controlnet_conditioning_scale=1.0
 
-    cn = ControlNet(device=device)
+    cn = ControlNet(device=device, controlnet_library='lllyasviel/sd-controlnet-canny')
 
     img = read_img_tensor(img_dir=img_dir, device=device)
 
     # edge map
     edge_map = cn.edge_detect(imgs=img)
-    
+
+    # norm map
+    norm_map = img
+
     # latent denoised
-    latents_output = cn.produce_latents(edge_map, text_prompt, num_inference_steps=num_inference_steps, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale)
+    latents_output = cn.produce_latents(cond_imgs=norm_map, prompts=text_prompt, num_inference_steps=num_inference_steps, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale)
 
     # image decode
     img_out = cn.decode_latents(latents_output)

@@ -97,7 +97,9 @@ class TextureGenerator:
         if dm == 'sd':
             guidance = StableDiffusion(device=self.device, num_inference_steps=num_inference_steps)
         elif dm == 'cn':
-            guidance = ControlNet(device=self.device, num_inference_steps=num_inference_steps)
+            guidance = ControlNet(controlnet_library='lllyasviel/sd-controlnet-canny', device=self.device, num_inference_steps=num_inference_steps)
+        elif dm == 'nm':
+            guidance = ControlNet(controlnet_library='lllyasviel/sd-controlnet-normal', device=self.device, num_inference_steps=num_inference_steps)
         
         guidance.eval()
         text_embeddings = guidance.get_text_embeds(text_prompt, '')
@@ -151,6 +153,14 @@ class TextureGenerator:
                 
                 edge_map = guidance.edge_detect(imgs=img_for_edge_detection, low_threshold=low_threshold, high_threshold=high_threshold)
 
+            elif dm == 'nm':
+                norm_map = self.renderer.rendering(self.mesh_data, self.diff_tex, 
+                                                  light_enable=render_light_enable, rand_back=False, 
+                                                  depth_render=bool_list[rand_render[0]],
+                                                  depth_value_inverse=bool_list[rand_render[1]],
+                                                  field_sample=field_sample, shading_method='norm'
+                                                  )[:, :, :, 0:-1].permute(0, 3, 1, 2)
+
             # save mediate results
             if (save_path is not None) and ((epoch+1) % info_update_period == 0) and (self.rank == 0):
                 
@@ -168,6 +178,8 @@ class TextureGenerator:
 
                 if dm == 'cn':
                     save_img_tensor(edge_map, save_dir=save_path + f"/edge_{epoch+1}.png")
+                elif dm == 'nm':
+                    save_img_tensor(norm_map, save_dir=save_path + f"/norm_{epoch+1}.png")
 
                 if not (field_sample or brdf):
                     self.diff_tex.img_save(save_path=save_path + f"/tex_ep_{epoch+1}.png", width=tex_size, height=tex_size)
@@ -176,26 +188,18 @@ class TextureGenerator:
 
             # SDS with annealation process
             if annealation:
-                if epoch <= epochs * ann_threshold:
-                    if dm == 'sd':
-                        tensor_for_backward, p_loss = self.SD_train_step(guidance=guidance, pred_tensor=pred_tensor, text_embeddings=text_embeddings,
+                if epoch >= epochs * ann_threshold:
+                    min_t = min_t_ann
+                    max_t = max_t_ann
+            
+            if dm == 'sd':
+                tensor_for_backward, p_loss = self.SD_train_step(guidance=guidance, pred_tensor=pred_tensor, text_embeddings=text_embeddings,
                                                                         min_t=min_t, max_t=max_t, guidance_scale=guidance_scale)
-                    elif dm == 'cn':
-                        tensor_for_backward, p_loss = self.CN_train_step(guidance=guidance, pred_tensor=pred_tensor, edge_map=edge_map, text_embeddings=text_embeddings,
+            elif dm == 'cn':
+                tensor_for_backward, p_loss = self.CN_train_step(guidance=guidance, pred_tensor=pred_tensor, cond_imgs=edge_map, text_embeddings=text_embeddings,
                                                                         min_t=min_t, max_t=max_t, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale)
-                else:
-                    if dm == 'sd':
-                        tensor_for_backward, p_loss = self.SD_train_step(guidance=guidance, pred_tensor=pred_tensor, text_embeddings=text_embeddings,
-                                                                        min_t=min_t_ann, max_t=max_t_ann, guidance_scale=guidance_scale)
-                    elif dm == 'cn':
-                        tensor_for_backward, p_loss = self.CN_train_step(guidance=guidance, pred_tensor=pred_tensor, edge_map=edge_map, text_embeddings=text_embeddings,
-                                                                        min_t=min_t_ann, max_t=max_t_ann, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale)
-            else:
-                if dm =='sd':
-                    tensor_for_backward, p_loss = self.SD_train_step(guidance=guidance, pred_tensor=pred_tensor, text_embeddings=text_embeddings,
-                                                                        min_t=min_t, max_t=max_t, guidance_scale=guidance_scale)
-                elif dm =='cn':
-                    tensor_for_backward, p_loss = self.CN_train_step(guidance=guidance, pred_tensor=pred_tensor, edge_map=edge_map, text_embeddings=text_embeddings,
+            elif dm == 'nm':
+                tensor_for_backward, p_loss = self.CN_train_step(guidance=guidance, pred_tensor=pred_tensor, cond_imgs=norm_map, text_embeddings=text_embeddings,
                                                                         min_t=min_t, max_t=max_t, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale)
 
             tensor_for_backward.backward()
@@ -241,13 +245,13 @@ class TextureGenerator:
 
         return tensor_for_backward, p_loss
     
-    def CN_train_step(self, guidance:ControlNet, pred_tensor, edge_map, text_embeddings,
+    def CN_train_step(self, guidance:ControlNet, pred_tensor, cond_imgs, text_embeddings,
                       min_t=0.02, max_t=0.98, guidance_scale=7.5, controlnet_conditioning_scale=1.0):
         # prepare edge map
         #edge_map = guidance.edge_detect(imgs=img_for_edge_detection)
-        edge_maps = torch.cat([edge_map] * 2)
+        cond_imgs = torch.cat([cond_imgs] * 2)
 
-        tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, edge_maps=edge_maps, text_embeddings=text_embeddings, 
+        tensor_for_backward, p_loss = guidance.train_step(pred_tensor=pred_tensor, cond_imgs=cond_imgs, text_embeddings=text_embeddings, 
                                                           min_t=min_t, max_t=max_t, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale)
 
         return tensor_for_backward, p_loss

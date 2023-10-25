@@ -73,9 +73,9 @@ def main():
 
     renderer = NeuralTextureRenderer()
     #mesh_path = "./Assets/3D_Model/Basketball/basketball.obj"
-    mesh_path = "./Assets/3D_Model/Cow/cow.obj"
+    mesh_path = "./Assets/3D_Model/Hulk/Hulk.obj"
     image_path = "./Assets/3D_Model/Cow/cow_texture.png"
-    save_path = "./Experiments/BRDF_test/test1"
+    save_path = "./temp"
     mlp_path = "./Assets/Image_MLP/Gaussian_noise_latent/latent_noise.pth"
 
     # differentiable texture
@@ -107,24 +107,24 @@ def main():
     mesh_data = {'mesh_obj': mesh_obj,'verts': verts, 'faces': faces, 'aux': aux}
 
     offset = torch.tensor([0, 0, 0])
-    renderer.camera_setting(dist=1.1, elev=0, azim=0, offset=offset)
+    renderer.camera_setting(dist=1.5, elev=-90, azim=-90, offset=offset)
     renderer.rasterization_setting(image_size=512)
     #renderer.light_setting(directions=[[-1.0, -1.0, -1.0], [-1.0, -1.0, 1.0], [-1.0, 1.0, -1.0], [-1.0, 1.0, 1.0], [1.0, -1.0, -1.0], [1.0, -1.0, 1.0], [1.0, 1.0, -1.0], [1.0, 1.0, 1.0]], 
     #                       intensities=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0], multi_lights=True)
 
-    image_tensor = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex, light_enable=True, field_sample=True, shading_method='phong')
+    image_tensor = renderer.rendering(mesh_data=mesh_data, diff_tex=diff_tex, light_enable=True, field_sample=True, shading_method='norm')
     image_array = image_tensor[0, :, :, 0:3].cpu().detach().numpy()
     image_array = np.clip(image_array, 0, 1)
     plt.imshow(image_array)
     plt.show()
 
-    image_tensors = renderer.render_around(mesh_data=mesh_data, diff_tex=diff_tex, dist=1.0, offset=offset, elev=0, 
-                                           light_enable=True, depth_render=False, depth_value_inverse=True, field_sample=False,
-                                           shading_method='phong')
+    image_tensors = renderer.render_around(mesh_data=mesh_data, diff_tex=diff_tex, dist=1.5, offset=offset, elev=0, 
+                                           light_enable=True, depth_render=False, depth_value_inverse=True, field_sample=True,
+                                           shading_method='norm')
     for count, image_tensor in enumerate(image_tensors):
         image_array = image_tensor[0, :, :, 0:3].cpu().detach().numpy()
         image_array = np.clip(image_array, 0, 1)
-        plt.imsave(save_path+f"/brdf_{count}.png", image_array)
+        plt.imsave(save_path+f"/norm_{count}.png", image_array)
 
 
 #latent space

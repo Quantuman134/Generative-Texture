@@ -54,7 +54,7 @@ def main(rank=0, world_size=1):
     # input configuration
     mesh_path = "./Assets/3D_Model/Hulk/Hulk.obj"
     text_prompt = "a Hulk"
-    save_path = "./Experiments/Generative_Texture_MLP/Hulk/CN_test1"
+    save_path = "./Experiments/Generative_Texture_MLP/Hulk/NM_test1"
 
     # diffusion model
     guidance_scale = 100
@@ -81,7 +81,7 @@ def main(rank=0, world_size=1):
     #                                rendered_img_size=img_size, annealation=False, field_sample=field_sample, brdf=brdf)
 
     #controlnet
-    texture_generator.texture_train(dm='cn', text_prompt=text_prompt, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale, 
+    texture_generator.texture_train(dm='nm', text_prompt=text_prompt, guidance_scale=guidance_scale, controlnet_conditioning_scale=controlnet_conditioning_scale, 
                                     lr=0.01, epochs=8000, save_path=save_path,
                                     dist_range=[1.2, 1.2], elev_range=[-10.0, 45.0], azim_range=[0.0, 360.0],
                                     info_update_period=200, render_light_enable=True, tex_size=tex_size, 
